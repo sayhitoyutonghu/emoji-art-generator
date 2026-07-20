@@ -12,12 +12,17 @@ import RecordRTC from 'recordrtc';
 // --- Constants & Types ---
 
 const DEFAULT_CHARSET = "✅🔘📝⏳✕✔✖";
+// Density = number of grid columns across the canvas (resolution-independent).
+// Fewer columns → larger, more readable glyphs; more columns → finer detail.
 const DENSITY_PRESETS = [
-  { label: 'Low', value: 12 },
-  { label: 'Medium', value: 8 },
-  { label: 'High', value: 5 },
-  { label: 'Ultra', value: 3 },
+  { label: 'Low', value: 36 },
+  { label: 'Medium', value: 64 },
+  { label: 'High', value: 100 },
+  { label: 'Ultra', value: 150 },
 ];
+
+// 4×4 Bayer matrix for ordered dithering (values 0–15).
+const BAYER4 = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
 
 // Style presets — the primary "pick a look" control. Each applies a bundle of
 // low-level settings so the user doesn't have to touch Color/Typography/charset
@@ -34,31 +39,31 @@ const STYLE_PRESETS: StylePreset[] = [
     id: 'ascii',
     name: 'ASCII Terminal',
     swatch: { bg: '#000000', fg: '#FFFFFF', sample: '#@%+=:' },
-    config: { charMode: 'charset', charset: ' .:-=+*#%@$MW059', colorMode: 'invert', density: 8, isAnimated: false },
+    config: { dither: false, charMode: 'charset', charset: ' .:-=+*#%@$MW059', colorMode: 'invert', density: 100, isAnimated: false },
   },
   {
     id: 'mono',
     name: 'Mono Dots',
     swatch: { bg: '#FFFFFF', fg: '#000000', sample: '#+=-:.' },
-    config: { charMode: 'charset', charset: ' .:-=+#', colorMode: 'monochrome', monochromeColor: '#000000', density: 8, isAnimated: false },
+    config: { dither: false, charMode: 'charset', charset: ' .:-=+#', colorMode: 'monochrome', monochromeColor: '#000000', density: 100, isAnimated: false },
   },
   {
     id: 'emoji',
     name: 'Emoji Mosaic',
     swatch: { bg: '#F2F2F2', fg: '#000000', sample: '🧍🪨☁️' },
-    config: { charMode: 'emojis', colorMode: 'original', density: 8, isAnimated: false },
+    config: { dither: false, charMode: 'emojis', colorMode: 'original', density: 48, isAnimated: false },
   },
   {
     id: 'sweep',
     name: 'Color Sweep',
     swatch: { bg: '#111111', fg: '#22C55E', sample: '▓▒░' },
-    config: { charMode: 'sweep', colorMode: 'sweep', autoSweep: true, density: 8, isAnimated: false },
+    config: { dither: false, charMode: 'sweep', colorMode: 'sweep', autoSweep: true, density: 72, isAnimated: false },
   },
   {
-    id: 'glitch',
-    name: 'Neon Glitch',
-    swatch: { bg: '#000000', fg: '#22C55E', sample: '01#!?' },
-    config: { charMode: 'charset', charset: '01#!?*', colorMode: 'brutalist', density: 6, isAnimated: false },
+    id: 'dither',
+    name: 'Dither',
+    swatch: { bg: '#F5F0E6', fg: '#E0491B', sample: '▚▞▟' },
+    config: { dither: true, colorMode: 'monochrome', monochromeColor: '#E0491B', density: 130, contrast: 1.8, isAnimated: false },
   },
 ];
 
@@ -103,6 +108,7 @@ interface Config {
   fontSize: number;
   canvasWidth: number;
   aspectRatio: string;
+  dither: boolean;
   colorMode: 'original' | 'monochrome' | 'brutalist' | 'invert' | 'sweep';
   monochromeColor: string;
   sweepColor1: string;
@@ -285,10 +291,11 @@ export default function App() {
 
   const [config, setConfig] = useState<Config>({
     charset: DEFAULT_CHARSET,
-    density: 8,
-    fontSize: 10,
+    density: 48,
+    fontSize: 100,
     canvasWidth: 1200,
     aspectRatio: 'source',
+    dither: false,
     colorMode: 'monochrome',
     monochromeColor: '#000000',
     sweepColor1: '#22C55E',
@@ -405,8 +412,13 @@ export default function App() {
         flipScaleY = Math.abs(wave);
       }
 
-      for (let y = 0; y < canvas.height; y += config.density) {
-        for (let x = 0; x < canvas.width; x += config.density) {
+      // Grid is defined by column count (config.density), independent of the
+      // export resolution — so a higher canvas width yields a sharper render of
+      // the SAME mosaic rather than more, smaller glyphs.
+      const cellSize = Math.max(2, canvas.width / config.density);
+
+      for (let y = 0; y < canvas.height; y += cellSize) {
+        for (let x = 0; x < canvas.width; x += cellSize) {
           const i = (Math.floor(y) * canvas.width + Math.floor(x)) * 4;
           if (i >= pixels.length) continue;
 
@@ -428,8 +440,22 @@ export default function App() {
             midYSum += y;
             midCount++;
           }
-          
-          // Calculate sweep state if needed for either color or char
+
+          // Dither path: ordered 1-bit dithering into a solid ink block.
+          if (config.dither) {
+            const col = Math.round(x / cellSize);
+            const row = Math.round(y / cellSize);
+            const threshold = (BAYER4[(row & 3) * 4 + (col & 3)] + 0.5) / 16;
+            const inverted = config.colorMode === 'invert';
+            const lum = inverted ? 1 - brightness / 255 : brightness / 255;
+            if (lum >= threshold) continue; // leave background
+            ctx.fillStyle = inverted ? '#FFFFFF' : config.monochromeColor;
+            // Solid square pixel (fillText block glyphs distort into bars).
+            ctx.fillRect(Math.floor(x), Math.floor(y), Math.ceil(cellSize) + 0.5, Math.ceil(cellSize) + 0.5);
+            continue;
+          }
+
+          // Calculate sweep state if needed for either char or color
           let sweepState = 1;
           if (config.colorMode === 'sweep' || config.charMode === 'sweep') {
             let progress = config.sweepProgress / 100;
@@ -482,11 +508,14 @@ export default function App() {
             ctx.fillStyle = sweepState === 3 ? config.sweepColor3 : (sweepState === 2 ? config.sweepColor2 : config.sweepColor1);
           }
 
-          // Improved readability: Ensure a minimum size and boost based on readability factor
-          const minSize = config.fontSize * 0.4;
+          // Glyph size is relative to the grid cell (fontSize is now a fill %,
+          // 40–160). Emoji/word/sweep glyphs fill the cell; ASCII/charset glyphs
+          // additionally scale with darkness for tonal range.
+          const fill = config.fontSize / 100;
+          const base = cellSize * fill;
           let sizeVar = (config.charMode === 'emojis' || config.charMode === 'sweep')
-            ? config.fontSize * (1 + config.readability * 0.5)
-            : Math.max(minSize, (1 - brightness / 255) * config.fontSize * (1 + config.readability));
+            ? base * (0.85 + config.readability * 0.3)
+            : Math.max(base * 0.3, (1 - brightness / 255) * base * (1 + config.readability * 0.4));
           
           // Animation logic
             let offsetX = 0;
@@ -499,11 +528,11 @@ export default function App() {
               const intensity = config.motionIntensity;
               
               if (config.animationMode === 'float') {
-                offsetX = Math.sin(speed + x * 0.02) * (config.density * 0.2) * intensity;
-                offsetY = Math.cos(speed + y * 0.02) * (config.density * 0.2) * intensity;
+                offsetX = Math.sin(speed + x * 0.02) * (cellSize * 0.2) * intensity;
+                offsetY = Math.cos(speed + y * 0.02) * (cellSize * 0.2) * intensity;
               } else if (config.animationMode === 'flow') {
                 const angleRad = (config.flowAngle * Math.PI) / 180;
-                const drift = (speed * 20 * intensity) % config.density;
+                const drift = (speed * 20 * intensity) % cellSize;
                 offsetX = Math.cos(angleRad) * drift;
                 offsetY = Math.sin(angleRad) * drift;
               } else if (config.animationMode === 'stress') {
@@ -1095,7 +1124,10 @@ export default function App() {
                     />
                   </div>
                   <div>
-                    <label className={labelCls}>Density</label>
+                    <div className="flex items-center justify-between mb-2">
+                      <label className={labelCls + ' mb-0'}>Detail (grid)</label>
+                      <span className="text-[10px] opacity-40">{config.density} cols</span>
+                    </div>
                     <div className={pillGroupCls}>
                       {DENSITY_PRESETS.map((preset) => (
                         <button
@@ -1107,16 +1139,27 @@ export default function App() {
                         </button>
                       ))}
                     </div>
-                  </div>
-                  <div>
-                    <label className={labelCls}>Font Size: {config.fontSize}px</label>
                     <input
-                      type="range" min="4" max="32"
-                      value={config.fontSize}
-                      onChange={(e) => setConfig(prev => ({ ...prev, fontSize: parseInt(e.target.value) }))}
-                      className="w-full accent-[#141414]"
+                      type="range" min="16" max="240" step="1"
+                      value={config.density}
+                      onChange={(e) => setConfig(prev => ({ ...prev, density: parseInt(e.target.value) }))}
+                      className="w-full accent-[#141414] mt-3"
                     />
+                    <p className="text-[10px] opacity-40 mt-1.5 leading-relaxed">
+                      Fewer columns = larger, more readable glyphs. Width only changes export sharpness.
+                    </p>
                   </div>
+                  {!config.dither && (
+                    <div>
+                      <label className={labelCls}>Glyph Fill: {config.fontSize}%</label>
+                      <input
+                        type="range" min="40" max="160"
+                        value={config.fontSize}
+                        onChange={(e) => setConfig(prev => ({ ...prev, fontSize: parseInt(e.target.value) }))}
+                        className="w-full accent-[#141414]"
+                      />
+                    </div>
+                  )}
                 </Section>
 
                 {/* Color */}
