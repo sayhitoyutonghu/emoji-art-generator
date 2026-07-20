@@ -37,8 +37,8 @@ const STYLE_PRESETS: StylePreset[] = [
   {
     id: 'ascii',
     name: 'ASCII',
-    swatch: { bg: '#000000', fg: '#FFFFFF', sample: '#@%+=:' },
-    config: { dither: false, cross: false, charMode: 'charset', charset: ' .:-=+*#%@$MW059', colorMode: 'invert', density: 100, isAnimated: false },
+    swatch: { bg: '#FFFFFF', fg: '#141414', sample: '#@%+=:' },
+    config: { dither: false, cross: false, charMode: 'charset', charset: ' .:-=+*#%@$MW059', colorMode: 'monochrome', monochromeColor: '#141414', density: 100, isAnimated: false },
   },
   {
     id: 'cross',
