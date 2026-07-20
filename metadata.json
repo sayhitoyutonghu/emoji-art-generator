@@ -1,0 +1,5 @@
+{
+  "name": "TaskGraph - To-Do Art Generator",
+  "description": "Convert images into typographic art using to-do list symbols and task-related graphics.",
+  "requestFramePermissions": []
+}
