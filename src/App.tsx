@@ -6,7 +6,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Upload, Download, Image as ImageIcon, RefreshCw, Circle, Square, ChevronDown, ChevronsLeft, ChevronsRight, Sparkles, Sun, Moon, Camera, Play, Pause, Volume2, VolumeX, FolderOpen, SlidersHorizontal } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { GoogleGenAI } from '@google/genai';
 import RecordRTC from 'recordrtc';
 
 // --- Constants & Types ---
@@ -240,13 +239,10 @@ export default function App() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(true);
   
-  // Video Generation & Recording State
+  // Recording State
   const [isRecording, setIsRecording] = useState(false);
   const [gifFrameRate, setGifFrameRate] = useState(15);
   const [gifQuality, setGifQuality] = useState(10);
-  const [aiPrompt, setAiPrompt] = useState("A cinematic looping animation of Sisyphus pushing a heavy stone up a hill");
-  const [isGeneratingVideo, setIsGeneratingVideo] = useState(false);
-  const [generationProgress, setGenerationProgress] = useState("");
 
   // UI Layout State
   const [openSections, setOpenSections] = useState<Set<string>>(new Set(['canvas']));
@@ -598,77 +594,9 @@ export default function App() {
             }
         }
       }
-
-      // Draw Overlay Text
-      if (config.showOverlayText && config.overlayText) {
-        let driftX = 0;
-        let driftY = 0;
-        
-        let angleRad = (config.overlayTextRotation * Math.PI) / 180;
-
-        let textX = canvas.width * (config.overlayTextPositionX / 100);
-        let textY = canvas.height * (config.overlayTextPositionY / 100);
-
-        if (config.overlayTextMode === 'track_ball' && midCount > 0) {
-          textX = midXSum / midCount;
-          textY = midYSum / midCount;
-        }
-
-        if (config.overlayTextDrift) {
-          let timeElapsed = t - config.overlayTextAnimTrigger;
-          if (timeElapsed < 0) timeElapsed = 0;
-          let rawProgress = timeElapsed / (config.overlayTextAnimDuration * 1000);
-          
-          if (!config.overlayTextAnimLoop && rawProgress > 1) {
-            rawProgress = 1;
-          } else if (config.overlayTextAnimLoop) {
-            rawProgress = rawProgress % 1;
-          }
-          
-          let easedProgress = rawProgress;
-          switch(config.overlayTextAnimCurve) {
-            case 'easeIn': easedProgress = rawProgress * rawProgress; break;
-            case 'easeOut': easedProgress = rawProgress * (2 - rawProgress); break;
-            case 'easeInOut': easedProgress = rawProgress < 0.5 ? 2 * rawProgress * rawProgress : -1 + (4 - 2 * rawProgress) * rawProgress; break;
-            case 'linear':
-            default: easedProgress = rawProgress; break;
-          }
-
-          if (config.colorMode === 'sweep' || config.charMode === 'sweep') {
-            // Drift leftwards along the rotation angle as sweep progresses
-            const driftDist = -easedProgress * config.overlayTextDriftAmount * config.motionIntensity;
-            driftX = Math.cos(angleRad) * driftDist;
-            driftY = Math.sin(angleRad) * driftDist;
-          } else {
-            const speed = easedProgress * Math.PI * 2;
-            driftX = Math.sin(speed + textY * 0.05) * (config.overlayTextDriftAmount * 0.05) * config.motionIntensity;
-            driftY = Math.cos(speed + textX * 0.05) * (config.overlayTextDriftAmount * 0.05) * config.motionIntensity;
-          }
-        }
-
-        if (config.overlayTextRollingSpeed !== 0) {
-          angleRad += (t * 0.002 * config.overlayTextRollingSpeed);
-        }
-
-        ctx.save();
-        ctx.translate(textX + driftX, textY + driftY);
-        ctx.rotate(angleRad);
-
-        ctx.fillStyle = config.overlayTextColor;
-        ctx.font = `900 ${config.overlayTextSize}px "Inter", sans-serif`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        
-        // Add a subtle shadow for better visibility over the grid
-        ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
-        ctx.shadowBlur = Math.max(10, config.overlayTextSize * 0.1);
-        ctx.fillText(config.overlayText, 0, 0);
-        
-        ctx.restore();
-      }
     };
 
-    const needsAnimationLoop = config.isAnimated || !!videoElement || ((config.colorMode === 'sweep' || config.charMode === 'sweep') && config.autoSweep) || config.overlayTextRollingSpeed !== 0 || config.overlayTextDrift;
+    const needsAnimationLoop = config.isAnimated || !!videoElement || ((config.colorMode === 'sweep' || config.charMode === 'sweep') && config.autoSweep);
     if (needsAnimationLoop) {
       const animate = (t: number) => {
         draw(t);
@@ -786,146 +714,30 @@ export default function App() {
     }
   };
 
-  const generateVideo = async () => {
-    if (!image) return;
-    
-    setIsGeneratingVideo(true);
-    setGenerationProgress("Checking API key...");
-    
-    try {
-      // Check API key
-      if ((window as any).aistudio && !(await (window as any).aistudio.hasSelectedApiKey())) {
-        await (window as any).aistudio.openSelectKey();
-      }
-      
-      setGenerationProgress("Initializing AI...");
-      
-      const getApiKey = () => {
-        if (typeof process !== 'undefined' && process.env && process.env.API_KEY) return process.env.API_KEY;
-        if (typeof process !== 'undefined' && process.env && process.env.GEMINI_API_KEY) return process.env.GEMINI_API_KEY;
-        if ((import.meta as any).env && (import.meta as any).env.VITE_GEMINI_API_KEY) return (import.meta as any).env.VITE_GEMINI_API_KEY;
-        return '';
-      };
-      
-      const apiKey = getApiKey();
-      if (!apiKey) {
-        throw new Error("API Key is missing. Please select a valid API key.");
-      }
-      
-      const ai = new GoogleGenAI({ apiKey });
-      
-      const canvas = document.createElement('canvas');
-      canvas.width = image.width;
-      canvas.height = image.height;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) throw new Error("Canvas context failed");
-      ctx.drawImage(image, 0, 0);
-      const dataUrl = canvas.toDataURL('image/jpeg');
-      const base64 = dataUrl.split(',')[1];
-      
-      const aspectRatio = image.width > image.height ? '16:9' : '9:16';
-      
-      setGenerationProgress("Generating video (this takes a few minutes)...");
-      
-      let operation = await ai.models.generateVideos({
-        model: 'veo-3.1-fast-generate-preview',
-        prompt: aiPrompt,
-        image: {
-          imageBytes: base64,
-          mimeType: 'image/jpeg',
-        },
-        config: {
-          numberOfVideos: 1,
-          resolution: '720p',
-          aspectRatio: aspectRatio as '16:9' | '9:16'
-        }
-      });
-      
-      while (!operation.done) {
-        await new Promise(resolve => setTimeout(resolve, 10000));
-        setGenerationProgress("Still generating... please wait...");
-        operation = await ai.operations.getVideosOperation({operation: operation});
-      }
-      
-      const downloadLink = operation.response?.generatedVideos?.[0]?.video?.uri;
-      if (!downloadLink) throw new Error("No video generated");
-      
-      setGenerationProgress("Downloading video...");
-      const response = await fetch(downloadLink, {
-        method: 'GET',
-        headers: {
-          'x-goog-api-key': apiKey,
-        },
-      });
-      
-      if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(`Download failed: ${response.status} - ${errText.substring(0, 100)}`);
-      }
-      
-      setGenerationProgress("Processing video file...");
-      const blob = await response.blob();
-      if (blob.size === 0) {
-        throw new Error("Downloaded video is empty.");
-      }
-      const url = URL.createObjectURL(blob);
-      
-      setGenerationProgress("Loading video player...");
-      const vid = document.createElement('video');
-      vid.src = url;
-      vid.autoplay = true;
-      vid.playsInline = true;
-      vid.loop = true;
-      vid.muted = true;
-      vid.crossOrigin = "anonymous";
-      vid.setAttribute('autoplay', '');
-      vid.setAttribute('muted', '');
-      vid.setAttribute('playsinline', '');
-      vid.setAttribute('loop', '');
-      
-      await new Promise((resolve, reject) => {
-        const timeout = setTimeout(() => {
-          reject(new Error("Video load timeout. The file might be corrupted or unsupported."));
-        }, 15000);
-        
-        vid.onerror = () => {
-          clearTimeout(timeout);
-          reject(new Error("Video element error: " + (vid.error?.message || "Unknown error")));
-        };
-        
-        vid.onloadeddata = () => {
-          clearTimeout(timeout);
-          resolve(true);
-        };
-        
-        vid.load();
-      });
-      
+  // Load a bundled demo video on first mount so the tool shows a result
+  // immediately, without requiring an upload.
+  useEffect(() => {
+    const url = `${(import.meta as any).env.BASE_URL}demo.mp4`;
+    const vid = document.createElement('video');
+    vid.src = url;
+    vid.autoplay = true;
+    vid.playsInline = true;
+    vid.loop = true;
+    vid.muted = true;
+    vid.crossOrigin = 'anonymous';
+    vid.setAttribute('autoplay', '');
+    vid.setAttribute('muted', '');
+    vid.setAttribute('playsinline', '');
+    vid.setAttribute('loop', '');
+    vid.onloadeddata = () => {
       setVideoElement(vid);
       setImage(null);
       setMediaPreviewUrl(url);
       setPreviewPlaying(true);
-      vid.play().catch(console.error);
-      setIsGeneratingVideo(false);
-    } catch (err: any) {
-      console.error(err);
-      
-      if (err.message && err.message.includes("Requested entity was not found")) {
-        setGenerationProgress("Error: Please select a valid PAID API key.");
-        if ((window as any).aistudio) {
-          setTimeout(async () => {
-            await (window as any).aistudio.openSelectKey();
-            setIsGeneratingVideo(false);
-          }, 2000);
-          return;
-        }
-      } else {
-        setGenerationProgress("Error: " + err.message);
-      }
-      
-      setTimeout(() => setIsGeneratingVideo(false), 5000);
-    }
-  };
+      vid.play().catch(() => {});
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className={`h-screen flex font-sans overflow-hidden transition-colors duration-300 ${isDarkMode ? 'bg-[#0A0A0A] text-[#EDEDED]' : 'bg-white text-[#141414]'}`}>
@@ -1024,29 +836,6 @@ export default function App() {
                       <span className="text-xs opacity-50">Upload photo or video</span>
                     </button>
                   )}
-
-                  <div className={`pt-1 space-y-3 ${mediaPreviewUrl ? 'mt-1' : ''}`}>
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs opacity-50">Animate with AI (Veo)</span>
-                    </div>
-                    <textarea
-                      value={aiPrompt}
-                      onChange={(e) => setAiPrompt(e.target.value)}
-                      className={`${inputCls(isDarkMode)} h-16 resize-none`}
-                      placeholder="Describe the motion to generate..."
-                    />
-                    <button
-                      onClick={generateVideo}
-                      disabled={isGeneratingVideo || !image}
-                      className={`w-full py-2.5 rounded-lg text-xs font-medium flex items-center justify-center gap-2 transition-colors disabled:opacity-30 disabled:cursor-not-allowed ${isDarkMode ? 'bg-white text-black hover:opacity-80' : 'bg-[#141414] text-white hover:opacity-80'}`}
-                    >
-                      <Sparkles size={13} />
-                      {isGeneratingVideo ? 'Generating...' : 'Animate Image'}
-                    </button>
-                    {isGeneratingVideo && (
-                      <div className="text-[11px] text-[#FF0000] animate-pulse">{generationProgress}</div>
-                    )}
-                  </div>
                 </div>
 
                 {/* STYLE — the hero: pick a look in one click */}
@@ -1367,165 +1156,6 @@ export default function App() {
                   )}
                 </Section>
 
-                {/* Overlay Text */}
-                <Section title="Overlay Text" isOpen={openSections.has('overlay')} onToggle={() => toggleSection('overlay')} isDarkMode={isDarkMode}>
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs opacity-50">Show Text</span>
-                    <Toggle checked={config.showOverlayText} onChange={() => setConfig(prev => ({ ...prev, showOverlayText: !prev.showOverlayText }))} isDarkMode={isDarkMode} />
-                  </div>
-
-                  {config.showOverlayText && (
-                    <div className="space-y-4">
-                      <div>
-                        <label className={labelCls}>Text Content</label>
-                        <input
-                          type="text"
-                          value={config.overlayText}
-                          onChange={(e) => setConfig(prev => ({ ...prev, overlayText: e.target.value }))}
-                          className={inputCls(isDarkMode)}
-                        />
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className={labelCls}>Size: {config.overlayTextSize}px</label>
-                          <input
-                            type="range" min="20" max="400"
-                            value={config.overlayTextSize}
-                            onChange={(e) => setConfig(prev => ({ ...prev, overlayTextSize: parseInt(e.target.value) }))}
-                            className="w-full accent-[#141414]"
-                          />
-                        </div>
-                        <div>
-                          <label className={labelCls}>Color</label>
-                          <input
-                            type="color"
-                            value={config.overlayTextColor}
-                            onChange={(e) => setConfig(prev => ({ ...prev, overlayTextColor: e.target.value }))}
-                            className="w-9 h-9 rounded-lg border-0 p-0 bg-transparent cursor-pointer"
-                          />
-                        </div>
-                      </div>
-
-                      <div>
-                        <label className={labelCls}>Position Mode</label>
-                        <div className={pillGroupCls}>
-                          {(['global', 'track_ball'] as const).map(mode => (
-                            <button
-                              key={mode}
-                              onClick={() => setConfig(prev => ({ ...prev, overlayTextMode: mode }))}
-                              className={pillCls(config.overlayTextMode === mode, isDarkMode)}
-                            >
-                              {mode.replace('_', ' ')}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-
-                      {config.overlayTextMode === 'global' && (
-                        <div className="grid grid-cols-2 gap-3">
-                          <div>
-                            <label className={labelCls}>Pos X: {config.overlayTextPositionX}%</label>
-                            <input
-                              type="range" min="0" max="100"
-                              value={config.overlayTextPositionX}
-                              onChange={(e) => setConfig(prev => ({ ...prev, overlayTextPositionX: parseInt(e.target.value) }))}
-                              className="w-full accent-[#141414]"
-                            />
-                          </div>
-                          <div>
-                            <label className={labelCls}>Pos Y: {config.overlayTextPositionY}%</label>
-                            <input
-                              type="range" min="0" max="100"
-                              value={config.overlayTextPositionY}
-                              onChange={(e) => setConfig(prev => ({ ...prev, overlayTextPositionY: parseInt(e.target.value) }))}
-                              className="w-full accent-[#141414]"
-                            />
-                          </div>
-                        </div>
-                      )}
-
-                      <div>
-                        <label className={labelCls}>Rotation: {config.overlayTextRotation}°</label>
-                        <input
-                          type="range" min="-180" max="180"
-                          value={config.overlayTextRotation}
-                          onChange={(e) => setConfig(prev => ({ ...prev, overlayTextRotation: parseInt(e.target.value) }))}
-                          className="w-full accent-[#141414]"
-                        />
-                      </div>
-
-                      <div>
-                        <label className={labelCls}>Rolling Speed: {config.overlayTextRollingSpeed}</label>
-                        <input
-                          type="range" min="-10" max="10"
-                          value={config.overlayTextRollingSpeed}
-                          onChange={(e) => setConfig(prev => ({ ...prev, overlayTextRollingSpeed: parseInt(e.target.value) }))}
-                          className="w-full accent-[#141414]"
-                        />
-                      </div>
-
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs opacity-50">Drift with Animation</span>
-                        <Toggle checked={config.overlayTextDrift} onChange={() => setConfig(prev => ({ ...prev, overlayTextDrift: !prev.overlayTextDrift }))} isDarkMode={isDarkMode} />
-                      </div>
-
-                      {config.overlayTextDrift && (
-                        <div className="space-y-4">
-                          <div>
-                            <label className={labelCls}>Drift Amount: {config.overlayTextDriftAmount}</label>
-                            <input
-                              type="range" min="0" max="1000"
-                              value={config.overlayTextDriftAmount}
-                              onChange={(e) => setConfig(prev => ({ ...prev, overlayTextDriftAmount: parseInt(e.target.value) }))}
-                              className="w-full accent-[#141414]"
-                            />
-                          </div>
-
-                          <div className="grid grid-cols-2 gap-3">
-                            <div>
-                              <label className={labelCls}>Curve</label>
-                              <select
-                                value={config.overlayTextAnimCurve}
-                                onChange={(e) => setConfig(prev => ({ ...prev, overlayTextAnimCurve: e.target.value as any }))}
-                                className={inputCls(isDarkMode)}
-                              >
-                                <option value="linear">Linear</option>
-                                <option value="easeIn">Ease In</option>
-                                <option value="easeOut">Ease Out</option>
-                                <option value="easeInOut">Ease In Out</option>
-                              </select>
-                            </div>
-                            <div>
-                              <label className={labelCls}>Duration: {config.overlayTextAnimDuration}s</label>
-                              <input
-                                type="range" min="0.1" max="10" step="0.1"
-                                value={config.overlayTextAnimDuration}
-                                onChange={(e) => setConfig(prev => ({ ...prev, overlayTextAnimDuration: parseFloat(e.target.value) }))}
-                                className="w-full accent-[#141414]"
-                              />
-                            </div>
-                          </div>
-
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs opacity-50">Loop Animation</span>
-                            <Toggle checked={config.overlayTextAnimLoop} onChange={() => setConfig(prev => ({ ...prev, overlayTextAnimLoop: !prev.overlayTextAnimLoop }))} isDarkMode={isDarkMode} />
-                          </div>
-
-                          {!config.overlayTextAnimLoop && (
-                            <button
-                              onClick={() => setConfig(prev => ({ ...prev, overlayTextAnimTrigger: performance.now() }))}
-                              className={`w-full py-2 rounded-lg text-xs transition-colors border ${isDarkMode ? 'border-[#333] hover:bg-[#1A1A1A]' : 'border-[#E5E5E5] hover:bg-[#FAFAFA]'}`}
-                            >
-                              Play Animation
-                            </button>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </Section>
-
                 {/* Image Adjust */}
                 <Section title="Adjust" isOpen={openSections.has('adjust')} onToggle={() => toggleSection('adjust')} isDarkMode={isDarkMode}>
                   <div>
@@ -1713,15 +1343,6 @@ export default function App() {
             <ChevronsRight size={16} className="opacity-60" />
           </button>
         )}
-
-        {/* Floating AI pill */}
-        <button
-          onClick={() => setSidebarCollapsed(false)}
-          className={`absolute top-5 left-1/2 -translate-x-1/2 z-20 px-4 py-2 rounded-full shadow-md flex items-center gap-2 text-xs font-medium transition-colors ${isDarkMode ? 'bg-[#1A1A1A] hover:bg-[#242424] text-white' : 'bg-white hover:bg-[#F5F5F5] text-[#141414]'}`}
-        >
-          <Sparkles size={13} />
-          Animate with AI
-        </button>
 
         {/* Floating action cluster */}
         <div className="absolute top-5 right-5 z-20 flex flex-col gap-2">
