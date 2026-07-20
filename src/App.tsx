@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Upload, Download, Image as ImageIcon, RefreshCw, Circle, Square, ChevronDown, ChevronsLeft, ChevronsRight, Sparkles, Sun, Moon, Camera, Play, Pause, Volume2, VolumeX, FolderOpen } from 'lucide-react';
+import { Upload, Download, Image as ImageIcon, RefreshCw, Circle, Square, ChevronDown, ChevronsLeft, ChevronsRight, Sparkles, Sun, Moon, Camera, Play, Pause, Volume2, VolumeX, FolderOpen, SlidersHorizontal } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { GoogleGenAI } from '@google/genai';
 import RecordRTC from 'recordrtc';
@@ -17,6 +17,49 @@ const DENSITY_PRESETS = [
   { label: 'Medium', value: 8 },
   { label: 'High', value: 5 },
   { label: 'Ultra', value: 3 },
+];
+
+// Style presets — the primary "pick a look" control. Each applies a bundle of
+// low-level settings so the user doesn't have to touch Color/Typography/charset
+// separately to get a coherent result.
+interface StylePreset {
+  id: string;
+  name: string;
+  swatch: { bg: string; fg: string; sample: string };
+  config: Partial<Config>;
+}
+
+const STYLE_PRESETS: StylePreset[] = [
+  {
+    id: 'ascii',
+    name: 'ASCII Terminal',
+    swatch: { bg: '#000000', fg: '#FFFFFF', sample: '#@%+=:' },
+    config: { charMode: 'charset', charset: ' .:-=+*#%@$MW059', colorMode: 'invert', density: 8, isAnimated: false },
+  },
+  {
+    id: 'mono',
+    name: 'Mono Dots',
+    swatch: { bg: '#FFFFFF', fg: '#000000', sample: '#+=-:.' },
+    config: { charMode: 'charset', charset: ' .:-=+#', colorMode: 'monochrome', monochromeColor: '#000000', density: 8, isAnimated: false },
+  },
+  {
+    id: 'emoji',
+    name: 'Emoji Mosaic',
+    swatch: { bg: '#F2F2F2', fg: '#000000', sample: '🧍🪨☁️' },
+    config: { charMode: 'emojis', colorMode: 'original', density: 8, isAnimated: false },
+  },
+  {
+    id: 'sweep',
+    name: 'Color Sweep',
+    swatch: { bg: '#111111', fg: '#22C55E', sample: '▓▒░' },
+    config: { charMode: 'sweep', colorMode: 'sweep', autoSweep: true, density: 8, isAnimated: false },
+  },
+  {
+    id: 'glitch',
+    name: 'Neon Glitch',
+    swatch: { bg: '#000000', fg: '#22C55E', sample: '01#!?' },
+    config: { charMode: 'charset', charset: '01#!?*', colorMode: 'brutalist', density: 6, isAnimated: false },
+  },
 ];
 
 interface Config {
@@ -163,8 +206,15 @@ export default function App() {
   const [generationProgress, setGenerationProgress] = useState("");
 
   // UI Layout State
-  const [openSections, setOpenSections] = useState<Set<string>>(new Set(['media']));
+  const [openSections, setOpenSections] = useState<Set<string>>(new Set(['canvas']));
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [activePreset, setActivePreset] = useState<string | null>(null);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+
+  const applyPreset = (preset: StylePreset) => {
+    setConfig(prev => ({ ...prev, ...preset.config }));
+    setActivePreset(preset.id);
+  };
 
   // Asset preview (thumbnail card in sidebar) — separate lightweight <video>/<img>
   // from the internal videoElement used for canvas sampling.
@@ -827,8 +877,9 @@ export default function App() {
 
               {/* Scrollable sections */}
               <div className="flex-1 overflow-y-auto custom-scrollbar px-5">
-                {/* Media / Assets */}
-                <Section title="Media" isOpen={openSections.has('media')} onToggle={() => toggleSection('media')} isDarkMode={isDarkMode}>
+                {/* SOURCE — always visible */}
+                <div className={`py-5 space-y-4 border-b ${isDarkMode ? 'border-[#222]' : 'border-[#EFEFEF]'}`}>
+                  <span className="text-[11px] font-medium uppercase tracking-wider opacity-40">Source</span>
                   {mediaPreviewUrl ? (
                     <div>
                       <span className="text-[11px] opacity-40 block mb-2">{mediaType === 'video' ? 'Video' : 'Image'}</span>
@@ -905,8 +956,50 @@ export default function App() {
                       <div className="text-[11px] text-[#FF0000] animate-pulse">{generationProgress}</div>
                     )}
                   </div>
-                </Section>
+                </div>
 
+                {/* STYLE — the hero: pick a look in one click */}
+                <div className={`py-5 space-y-3 border-b ${isDarkMode ? 'border-[#222]' : 'border-[#EFEFEF]'}`}>
+                  <span className="text-[11px] font-medium uppercase tracking-wider opacity-40">Style</span>
+                  <div className="grid grid-cols-2 gap-2">
+                    {STYLE_PRESETS.map((p) => (
+                      <button
+                        key={p.id}
+                        onClick={() => applyPreset(p)}
+                        className={`rounded-xl overflow-hidden border text-left transition-all ${
+                          activePreset === p.id
+                            ? (isDarkMode ? 'border-white' : 'border-[#141414]')
+                            : (isDarkMode ? 'border-[#242424] hover:border-[#444]' : 'border-[#EEE] hover:border-[#CCC]')
+                        }`}
+                      >
+                        <div
+                          className="h-11 flex items-center justify-center text-sm tracking-widest font-mono"
+                          style={{ background: p.swatch.bg, color: p.swatch.fg }}
+                        >
+                          {p.swatch.sample}
+                        </div>
+                        <div className={`px-2.5 py-1.5 text-[11px] font-medium ${activePreset === p.id ? '' : 'opacity-70'}`}>
+                          {p.name}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* ADVANCED — everything else, collapsed by default */}
+                <button
+                  onClick={() => setShowAdvanced(v => !v)}
+                  className={`w-full flex items-center justify-between py-4 text-left transition-colors ${isDarkMode ? 'hover:text-white' : 'hover:text-black'}`}
+                >
+                  <div className="flex items-center gap-2">
+                    <SlidersHorizontal size={14} className="opacity-40" />
+                    <span className="text-[15px] font-medium">Advanced</span>
+                  </div>
+                  <ChevronDown size={16} className={`transition-transform duration-200 opacity-40 ${showAdvanced ? 'rotate-180' : ''}`} />
+                </button>
+
+                {showAdvanced && (
+                <div className={`border-t ${isDarkMode ? 'border-[#222]' : 'border-[#EFEFEF]'}`}>
                 {/* Canvas */}
                 <Section title="Canvas" isOpen={openSections.has('canvas')} onToggle={() => toggleSection('canvas')} isDarkMode={isDarkMode}>
                   <div>
@@ -1440,6 +1533,9 @@ export default function App() {
                   </div>
                 </Section>
 
+                </div>
+                )}
+
                 <div className="h-4" />
               </div>
 
@@ -1472,7 +1568,7 @@ export default function App() {
 
         {/* Floating AI pill */}
         <button
-          onClick={() => { setSidebarCollapsed(false); setOpenSections(prev => new Set(prev).add('media')); }}
+          onClick={() => setSidebarCollapsed(false)}
           className={`absolute top-5 left-1/2 -translate-x-1/2 z-20 px-4 py-2 rounded-full shadow-md flex items-center gap-2 text-xs font-medium transition-colors ${isDarkMode ? 'bg-[#1A1A1A] hover:bg-[#242424] text-white' : 'bg-white hover:bg-[#F5F5F5] text-[#141414]'}`}
         >
           <Sparkles size={13} />
