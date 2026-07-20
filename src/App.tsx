@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Upload, Download, Settings2, Image as ImageIcon, RefreshCw, Type, Palette, Move, Video, Circle, Square } from 'lucide-react';
+import { Upload, Download, Image as ImageIcon, RefreshCw, Circle, Square, ChevronDown, ChevronsLeft, ChevronsRight, Sparkles, Sun, Moon, Camera, Play, Pause, Volume2, VolumeX, FolderOpen } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { GoogleGenAI } from '@google/genai';
 import RecordRTC from 'recordrtc';
@@ -70,6 +70,84 @@ interface Config {
 
 // --- Components ---
 
+interface SectionProps {
+  title: string;
+  isOpen: boolean;
+  onToggle: () => void;
+  isDarkMode: boolean;
+  children: React.ReactNode;
+}
+
+const Section: React.FC<SectionProps> = ({ title, isOpen, onToggle, isDarkMode, children }) => {
+  return (
+    <div className={`border-b ${isDarkMode ? 'border-[#222]' : 'border-[#EFEFEF]'}`}>
+      <button
+        onClick={onToggle}
+        className={`w-full flex items-center justify-between py-4 text-left transition-colors ${isDarkMode ? 'hover:text-white' : 'hover:text-black'}`}
+      >
+        <span className="text-[15px] font-medium">{title}</span>
+        <ChevronDown
+          size={16}
+          className={`transition-transform duration-200 opacity-40 ${isOpen ? 'rotate-180' : ''}`}
+        />
+      </button>
+      <AnimatePresence initial={false}>
+        {isOpen && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.18, ease: 'easeInOut' }}
+            className="overflow-hidden"
+          >
+            <div className="pb-5 space-y-5">{children}</div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+};
+
+interface ToggleProps {
+  checked: boolean;
+  onChange: () => void;
+  isDarkMode: boolean;
+}
+
+const Toggle: React.FC<ToggleProps> = ({ checked, onChange, isDarkMode }) => (
+  <button
+    onClick={onChange}
+    className={`w-9 h-5 rounded-full relative shrink-0 transition-colors ${
+      checked ? (isDarkMode ? 'bg-white' : 'bg-[#1A1A1A]') : (isDarkMode ? 'bg-[#333]' : 'bg-[#E5E5E5]')
+    }`}
+  >
+    <div
+      className={`absolute top-0.5 w-4 h-4 rounded-full transition-all ${
+        checked
+          ? `right-0.5 ${isDarkMode ? 'bg-black' : 'bg-white'}`
+          : `left-0.5 ${isDarkMode ? 'bg-[#999]' : 'bg-white'}`
+      }`}
+    />
+  </button>
+);
+
+const labelCls = "text-xs opacity-50 block mb-2";
+const pillGroupCls = "flex flex-wrap gap-1.5";
+
+function pillCls(active: boolean, isDarkMode: boolean) {
+  return `px-3 py-1.5 text-xs rounded-full border capitalize transition-colors ${
+    active
+      ? (isDarkMode ? 'bg-white text-black border-white' : 'bg-[#1A1A1A] text-white border-[#1A1A1A]')
+      : (isDarkMode ? 'border-[#333] text-[#999] hover:border-[#666]' : 'border-[#E5E5E5] text-[#666] hover:border-[#BBB]')
+  }`;
+}
+
+function inputCls(isDarkMode: boolean) {
+  return `w-full border rounded-lg px-3 py-2 text-xs outline-none transition-colors ${
+    isDarkMode ? 'bg-[#151515] border-[#333] focus:border-[#666]' : 'bg-[#FAFAFA] border-[#E5E5E5] focus:border-[#1A1A1A]'
+  }`;
+}
+
 export default function App() {
   const [image, setImage] = useState<HTMLImageElement | null>(null);
   const [videoElement, setVideoElement] = useState<HTMLVideoElement | null>(null);
@@ -83,6 +161,40 @@ export default function App() {
   const [aiPrompt, setAiPrompt] = useState("A cinematic looping animation of Sisyphus pushing a heavy stone up a hill");
   const [isGeneratingVideo, setIsGeneratingVideo] = useState(false);
   const [generationProgress, setGenerationProgress] = useState("");
+
+  // UI Layout State
+  const [openSections, setOpenSections] = useState<Set<string>>(new Set(['media']));
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+  // Asset preview (thumbnail card in sidebar) — separate lightweight <video>/<img>
+  // from the internal videoElement used for canvas sampling.
+  const [mediaPreviewUrl, setMediaPreviewUrl] = useState<string | null>(null);
+  const [previewPlaying, setPreviewPlaying] = useState(true);
+  const [previewMuted, setPreviewMuted] = useState(true);
+  const previewVideoRef = useRef<HTMLVideoElement>(null);
+  const mediaType: 'video' | 'image' | null = videoElement ? 'video' : (image ? 'image' : null);
+
+  const togglePreviewPlayback = () => {
+    const el = previewVideoRef.current;
+    if (!el) return;
+    if (el.paused) { el.play().catch(() => {}); setPreviewPlaying(true); }
+    else { el.pause(); setPreviewPlaying(false); }
+  };
+
+  const togglePreviewMute = () => {
+    const el = previewVideoRef.current;
+    if (!el) return;
+    el.muted = !el.muted;
+    setPreviewMuted(el.muted);
+  };
+
+  const toggleSection = (id: string) => {
+    setOpenSections(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
 
   const [config, setConfig] = useState<Config>({
     charset: DEFAULT_CHARSET,
@@ -473,17 +585,21 @@ export default function App() {
         vid.onloadeddata = () => {
           setVideoElement(vid);
           setImage(null);
+          setMediaPreviewUrl(url);
+          setPreviewPlaying(true);
           vid.play().catch(console.error);
         };
       } else {
         const reader = new FileReader();
         reader.onload = (event) => {
+          const dataUrl = event.target?.result as string;
           const img = new Image();
           img.onload = () => {
             setImage(img);
             setVideoElement(null);
+            setMediaPreviewUrl(dataUrl);
           };
-          img.src = event.target?.result as string;
+          img.src = dataUrl;
         };
         reader.readAsDataURL(file);
       }
@@ -646,6 +762,8 @@ export default function App() {
       
       setVideoElement(vid);
       setImage(null);
+      setMediaPreviewUrl(url);
+      setPreviewPlaying(true);
       vid.play().catch(console.error);
       setIsGeneratingVideo(false);
     } catch (err: any) {
@@ -669,681 +787,172 @@ export default function App() {
   };
 
   return (
-    <div className={`h-screen flex flex-col font-sans selection:bg-[#FF0000] selection:text-white transition-colors duration-300 ${isDarkMode ? 'bg-[#0A0A0A] text-[#E0E0E0]' : 'bg-[#F0F0F0] text-[#1A1A1A]'}`}>
-      {/* Header */}
-      <header className={`shrink-0 border-b p-6 flex justify-between items-center z-50 transition-colors duration-300 ${isDarkMode ? 'bg-[#0A0A0A] border-[#333]' : 'bg-white border-[#1A1A1A]'}`}>
-        <div className="flex items-center gap-4">
-          <div className={`w-10 h-10 flex items-center justify-center font-bold text-xl transition-colors ${isDarkMode ? 'bg-[#E0E0E0] text-[#0A0A0A]' : 'bg-[#1A1A1A] text-white'}`}>
-            M
-          </div>
-          <div>
-            <h1 className="text-2xl font-black uppercase tracking-tighter leading-none">TaskGraph</h1>
-            <p className="text-[10px] uppercase tracking-widest opacity-50 font-mono mt-1">Machine v2.0-Industrial</p>
-          </div>
-        </div>
-        <div className="flex gap-2">
-          <button 
-            onClick={() => setIsDarkMode(!isDarkMode)}
-            className={`px-4 py-2 border transition-colors flex items-center gap-2 text-[10px] font-bold uppercase ${isDarkMode ? 'border-[#333] hover:bg-[#333]' : 'border-[#1A1A1A] hover:bg-[#1A1A1A] hover:text-white'}`}
+    <div className={`h-screen flex font-sans overflow-hidden transition-colors duration-300 ${isDarkMode ? 'bg-[#0A0A0A] text-[#EDEDED]' : 'bg-white text-[#141414]'}`}>
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={handleFileUpload}
+        accept="image/*,video/*"
+        className="hidden"
+      />
+
+      {/* Sidebar */}
+      <AnimatePresence initial={false}>
+        {!sidebarCollapsed && (
+          <motion.aside
+            initial={{ width: 0, opacity: 0 }}
+            animate={{ width: 320, opacity: 1 }}
+            exit={{ width: 0, opacity: 0 }}
+            transition={{ duration: 0.2, ease: 'easeInOut' }}
+            className={`relative shrink-0 h-full overflow-hidden border-r ${isDarkMode ? 'border-[#222]' : 'border-[#EFEFEF]'}`}
           >
-            {isDarkMode ? 'Light UI' : 'Dark UI'}
-          </button>
-          <button 
-            onClick={() => fileInputRef.current?.click()}
-            className={`px-4 py-2 border transition-colors flex items-center gap-2 text-[10px] font-bold uppercase ${isDarkMode ? 'border-[#333] hover:bg-[#333]' : 'border-[#1A1A1A] hover:bg-[#1A1A1A] hover:text-white'}`}
-          >
-            <Upload size={14} />
-            Upload
-          </button>
-          <button 
-            onClick={toggleRecording}
-            disabled={!image && !videoElement}
-            className={`px-4 py-2 transition-colors flex items-center gap-2 text-[10px] font-bold uppercase disabled:opacity-30 disabled:cursor-not-allowed ${isRecording ? 'bg-[#FF0000] text-white animate-pulse' : (isDarkMode ? 'bg-[#E0E0E0] text-[#0A0A0A] hover:bg-[#FF0000] hover:text-white' : 'bg-[#1A1A1A] text-white hover:bg-[#FF0000]')}`}
-          >
-            {isRecording ? <Square size={14} /> : <Circle size={14} />}
-            {isRecording ? 'Stop REC' : 'REC Loop'}
-          </button>
-          <button 
-            onClick={downloadResult}
-            disabled={!image && !videoElement}
-            className={`px-4 py-2 transition-colors flex items-center gap-2 text-[10px] font-bold uppercase disabled:opacity-30 disabled:cursor-not-allowed ${isDarkMode ? 'bg-[#E0E0E0] text-[#0A0A0A] hover:bg-[#FF0000] hover:text-white' : 'bg-[#1A1A1A] text-white hover:bg-[#FF0000]'}`}
-          >
-            <Download size={14} />
-            Export
-          </button>
-        </div>
-        <input 
-          type="file" 
-          ref={fileInputRef} 
-          onChange={handleFileUpload} 
-          accept="image/*,video/*" 
-          className="hidden" 
-        />
-      </header>
-
-      <main className="flex-1 flex flex-col lg:flex-row overflow-hidden">
-        {/* Sidebar Controls */}
-        <aside className={`w-full lg:w-80 shrink-0 border-r overflow-y-auto custom-scrollbar p-6 space-y-8 transition-colors duration-300 ${isDarkMode ? 'bg-[#0A0A0A] border-[#333]' : 'bg-white border-[#1A1A1A]'}`}>
-          {/* AI Video Generation Section */}
-          <section>
-            <div className="flex items-center gap-2 mb-4">
-              <Video size={18} />
-              <h2 className="text-xs font-black uppercase tracking-widest">AI Video (Veo)</h2>
-            </div>
-            <div className="space-y-4">
-              <div>
-                <label className="text-[10px] uppercase font-bold opacity-50 block mb-2">Prompt</label>
-                <textarea 
-                  value={aiPrompt}
-                  onChange={(e) => setAiPrompt(e.target.value)}
-                  className={`w-full h-20 border p-3 text-xs font-mono outline-none resize-none transition-colors ${isDarkMode ? 'bg-[#111] border-[#333] focus:border-[#E0E0E0]' : 'bg-white border-[#E0E0E0] focus:border-[#1A1A1A]'}`}
-                  placeholder="e.g. Sisyphus pushing a stone, looping animation"
-                />
-              </div>
-              <button 
-                onClick={generateVideo}
-                disabled={isGeneratingVideo || !image}
-                className={`w-full py-3 font-bold uppercase tracking-widest text-xs transition-colors ${isDarkMode ? 'bg-[#E0E0E0] text-[#0A0A0A] hover:bg-[#FF0000] hover:text-white' : 'bg-[#1A1A1A] text-white hover:bg-[#FF0000]'} disabled:opacity-50`}
-              >
-                {isGeneratingVideo ? 'Generating...' : 'Animate Image'}
-              </button>
-              {isGeneratingVideo && (
-                <div className="text-[10px] font-mono text-[#FF0000] animate-pulse">
-                  {generationProgress}
-                </div>
-              )}
-            </div>
-          </section>
-
-          <section>
-            <div className="flex items-center gap-2 mb-4">
-              <Settings2 size={18} />
-              <h2 className="text-xs font-black uppercase tracking-widest">Core Settings</h2>
-            </div>
-            
-            <div className="space-y-6">
-              <div>
-                <label className="text-[10px] uppercase font-bold opacity-50 block mb-2">Canvas Width: {config.canvasWidth}px</label>
-                <input 
-                  type="range" 
-                  min="400" 
-                  max="4000" 
-                  step="100"
-                  value={config.canvasWidth}
-                  onChange={(e) => setConfig(prev => ({ ...prev, canvasWidth: parseInt(e.target.value) }))}
-                  className={`w-full accent-[#FF0000] ${isDarkMode ? 'bg-[#333]' : 'bg-[#E0E0E0]'}`}
-                />
-              </div>
-
-              <div>
-                <label className="text-[10px] uppercase font-bold opacity-50 block mb-2">Density (Grid Size)</label>
-                <div className="grid grid-cols-4 gap-1">
-                  {DENSITY_PRESETS.map((preset) => (
-                    <button
-                      key={preset.label}
-                      onClick={() => setConfig(prev => ({ ...prev, density: preset.value }))}
-                      className={`py-2 text-[10px] font-bold border ${
-                        config.density === preset.value 
-                          ? 'bg-[#1A1A1A] text-white border-[#1A1A1A]' 
-                          : 'border-[#E0E0E0] hover:border-[#1A1A1A]'
-                      }`}
-                    >
-                      {preset.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <label className="text-[10px] uppercase font-bold opacity-50 block mb-2">Base Font Size: {config.fontSize}px</label>
-                <input 
-                  type="range" 
-                  min="4" 
-                  max="32" 
-                  value={config.fontSize}
-                  onChange={(e) => setConfig(prev => ({ ...prev, fontSize: parseInt(e.target.value) }))}
-                  className="w-full accent-[#1A1A1A]"
-                />
-              </div>
-
-              <div>
-                <label className="text-[10px] uppercase font-bold opacity-50 block mb-2">Color Mode</label>
-                <div className="grid grid-cols-2 gap-1">
-                  {(['monochrome', 'original', 'brutalist', 'invert', 'sweep'] as const).map((mode) => (
-                    <button
-                      key={mode}
-                      onClick={() => setConfig(prev => ({ ...prev, colorMode: mode }))}
-                      className={`px-3 py-2 text-[10px] font-bold border text-center uppercase transition-colors ${
-                        config.colorMode === mode 
-                          ? (isDarkMode ? 'bg-[#E0E0E0] text-[#0A0A0A] border-[#E0E0E0]' : 'bg-[#1A1A1A] text-white border-[#1A1A1A]')
-                          : (isDarkMode ? 'border-[#333] hover:border-[#E0E0E0]' : 'border-[#E0E0E0] hover:border-[#1A1A1A]')
-                      }`}
-                    >
-                      {mode}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {config.colorMode === 'monochrome' && (
-                <div>
-                  <label className="text-[10px] uppercase font-bold opacity-50 block mb-2">Ink Color</label>
-                  <div className="flex gap-2">
-                    <input 
-                      type="color" 
-                      value={config.monochromeColor}
-                      onChange={(e) => setConfig(prev => ({ ...prev, monochromeColor: e.target.value }))}
-                      className="w-10 h-10 border border-[#1A1A1A] p-0 bg-transparent cursor-pointer"
-                    />
-                    <input 
-                      type="text" 
-                      value={config.monochromeColor}
-                      onChange={(e) => setConfig(prev => ({ ...prev, monochromeColor: e.target.value }))}
-                      className="flex-1 border border-[#E0E0E0] px-3 text-xs font-mono uppercase"
-                    />
+            <div className="w-[320px] h-full flex flex-col">
+              {/* Header */}
+              <div className={`shrink-0 flex items-center justify-between px-5 py-4 border-b ${isDarkMode ? 'border-[#222]' : 'border-[#EFEFEF]'}`}>
+                <div className="flex items-center gap-2.5">
+                  <div className={`w-6 h-6 rounded-md flex items-center justify-center text-xs font-bold shrink-0 ${isDarkMode ? 'bg-white text-black' : 'bg-[#141414] text-white'}`}>
+                    T
                   </div>
+                  <span className="text-sm font-medium">TaskGraph</span>
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#FF0000]" />
                 </div>
-              )}
-
-              {config.colorMode === 'sweep' && (
-                <div className="space-y-4 mt-4 border-t border-[#E0E0E0] dark:border-[#333] pt-4">
-                  <div className="grid grid-cols-3 gap-4">
-                    <div>
-                      <label className="text-[10px] uppercase font-bold opacity-50 block mb-2">Color 1</label>
-                      <div className="flex gap-2">
-                        <input 
-                          type="color" 
-                          value={config.sweepColor1}
-                          onChange={(e) => setConfig(prev => ({ ...prev, sweepColor1: e.target.value }))}
-                          className="w-8 h-8 border border-[#1A1A1A] p-0 bg-transparent cursor-pointer"
-                        />
-                      </div>
-                    </div>
-                    <div>
-                      <label className="text-[10px] uppercase font-bold opacity-50 block mb-2">Color 2</label>
-                      <div className="flex gap-2">
-                        <input 
-                          type="color" 
-                          value={config.sweepColor2}
-                          onChange={(e) => setConfig(prev => ({ ...prev, sweepColor2: e.target.value }))}
-                          className="w-8 h-8 border border-[#1A1A1A] p-0 bg-transparent cursor-pointer"
-                        />
-                      </div>
-                    </div>
-                    <div>
-                      <label className="text-[10px] uppercase font-bold opacity-50 block mb-2">Color 3</label>
-                      <div className="flex gap-2">
-                        <input 
-                          type="color" 
-                          value={config.sweepColor3}
-                          onChange={(e) => setConfig(prev => ({ ...prev, sweepColor3: e.target.value }))}
-                          className="w-8 h-8 border border-[#1A1A1A] p-0 bg-transparent cursor-pointer"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <label className="text-[10px] uppercase font-bold opacity-50">Sweep Progress</label>
-                      <div className="flex items-center gap-2">
-                        <label className="text-[10px] uppercase font-bold opacity-50">Auto</label>
-                        <button 
-                          onClick={() => setConfig(prev => ({ ...prev, autoSweep: !prev.autoSweep }))}
-                          className={`w-8 h-4 rounded-full relative transition-colors ${config.autoSweep ? 'bg-[#1A1A1A] dark:bg-[#E0E0E0]' : 'bg-[#E0E0E0] dark:bg-[#333]'}`}
-                        >
-                          <div className={`absolute top-0.5 w-3 h-3 rounded-full transition-all ${config.autoSweep ? 'right-0.5 bg-white dark:bg-[#0A0A0A]' : 'left-0.5 bg-white dark:bg-[#888]'}`} />
-                        </button>
-                      </div>
-                    </div>
-                    <input 
-                      type="range" 
-                      min="0" 
-                      max="200" 
-                      value={config.sweepProgress}
-                      onChange={(e) => setConfig(prev => ({ ...prev, sweepProgress: parseInt(e.target.value), autoSweep: false }))}
-                      className="w-full accent-[#1A1A1A]"
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
-          </section>
-
-          <section>
-            <div className="flex items-center gap-2 mb-4">
-              <Type size={18} />
-              <h2 className="text-xs font-black uppercase tracking-widest">Typography</h2>
-            </div>
-            
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <label className="text-[10px] uppercase font-bold opacity-50">Character Mode</label>
-                <div className="flex flex-wrap gap-1 justify-end">
-                  {(['charset', 'words', 'emojis', 'sweep'] as const).map(mode => (
-                    <button
-                      key={mode}
-                      onClick={() => setConfig(prev => ({ ...prev, charMode: mode }))}
-                      className={`px-2 py-1 text-[10px] font-bold border uppercase ${
-                        config.charMode === mode 
-                          ? (isDarkMode ? 'bg-[#E0E0E0] text-[#0A0A0A] border-[#E0E0E0]' : 'bg-[#1A1A1A] text-white border-[#1A1A1A]')
-                          : (isDarkMode ? 'border-[#333] hover:border-[#E0E0E0]' : 'border-[#E0E0E0] hover:border-[#1A1A1A]')
-                      }`}
-                    >
-                      {mode}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {config.charMode === 'sweep' && (
-                <div className="space-y-4 mt-4 border-t border-[#E0E0E0] dark:border-[#333] pt-4">
-                  <div className="grid grid-cols-3 gap-4">
-                    <div>
-                      <label className="text-[10px] uppercase font-bold opacity-50 block mb-2">Emoji 1</label>
-                      <input 
-                        type="text" 
-                        value={config.sweepChar1}
-                        onChange={(e) => setConfig(prev => ({ ...prev, sweepChar1: e.target.value }))}
-                        className={`w-full border p-2 text-center text-base outline-none transition-colors ${isDarkMode ? 'bg-[#111] border-[#333] focus:border-[#E0E0E0]' : 'bg-white border-[#E0E0E0] focus:border-[#1A1A1A]'}`}
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[10px] uppercase font-bold opacity-50 block mb-2">Emoji 2</label>
-                      <input 
-                        type="text" 
-                        value={config.sweepChar2}
-                        onChange={(e) => setConfig(prev => ({ ...prev, sweepChar2: e.target.value }))}
-                        className={`w-full border p-2 text-center text-base outline-none transition-colors ${isDarkMode ? 'bg-[#111] border-[#333] focus:border-[#E0E0E0]' : 'bg-white border-[#E0E0E0] focus:border-[#1A1A1A]'}`}
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[10px] uppercase font-bold opacity-50 block mb-2">Emoji 3</label>
-                      <input 
-                        type="text" 
-                        value={config.sweepChar3}
-                        onChange={(e) => setConfig(prev => ({ ...prev, sweepChar3: e.target.value }))}
-                        className={`w-full border p-2 text-center text-base outline-none transition-colors ${isDarkMode ? 'bg-[#111] border-[#333] focus:border-[#E0E0E0]' : 'bg-white border-[#E0E0E0] focus:border-[#1A1A1A]'}`}
-                      />
-                    </div>
-                  </div>
-                  {config.colorMode !== 'sweep' && (
-                    <div>
-                      <div className="flex items-center justify-between mb-2">
-                        <label className="text-[10px] uppercase font-bold opacity-50">Sweep Progress</label>
-                        <div className="flex items-center gap-2">
-                          <label className="text-[10px] uppercase font-bold opacity-50">Auto</label>
-                          <button 
-                            onClick={() => setConfig(prev => ({ ...prev, autoSweep: !prev.autoSweep }))}
-                            className={`w-8 h-4 rounded-full relative transition-colors ${config.autoSweep ? 'bg-[#1A1A1A] dark:bg-[#E0E0E0]' : 'bg-[#E0E0E0] dark:bg-[#333]'}`}
-                          >
-                            <div className={`absolute top-0.5 w-3 h-3 rounded-full transition-all ${config.autoSweep ? 'right-0.5 bg-white dark:bg-[#0A0A0A]' : 'left-0.5 bg-white dark:bg-[#888]'}`} />
-                          </button>
-                        </div>
-                      </div>
-                      <input 
-                        type="range" 
-                        min="0" 
-                        max="200" 
-                        value={config.sweepProgress}
-                        onChange={(e) => setConfig(prev => ({ ...prev, sweepProgress: parseInt(e.target.value), autoSweep: false }))}
-                        className="w-full accent-[#1A1A1A]"
-                      />
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {config.charMode === 'words' && (
-                <div>
-                  <label className="text-[10px] uppercase font-bold opacity-50 block mb-2">Source Words (Space separated)</label>
-                  <textarea 
-                    value={config.customWords}
-                    onChange={(e) => setConfig(prev => ({ ...prev, customWords: e.target.value }))}
-                    className={`w-full h-24 border p-3 text-xs font-mono outline-none resize-none transition-colors ${isDarkMode ? 'bg-[#111] border-[#333] focus:border-[#E0E0E0]' : 'bg-white border-[#E0E0E0] focus:border-[#1A1A1A]'}`}
-                    placeholder="Enter words to form the image..."
-                  />
-                </div>
-              )}
-              
-              {config.charMode === 'charset' && (
-                <div>
-                  <label className="text-[10px] uppercase font-bold opacity-50 block mb-2">Character Set</label>
-                  <input 
-                    type="text" 
-                    value={config.charset}
-                    onChange={(e) => setConfig(prev => ({ ...prev, charset: e.target.value }))}
-                    className={`w-full border p-3 text-xs font-mono outline-none transition-colors ${isDarkMode ? 'bg-[#111] border-[#333] focus:border-[#E0E0E0]' : 'bg-white border-[#E0E0E0] focus:border-[#1A1A1A]'}`}
-                  />
-                </div>
-              )}
-
-              {config.charMode === 'emojis' && (
-                <div className="space-y-3">
-                  <div className="grid grid-cols-3 gap-2">
-                    <div>
-                      <label className="text-[10px] uppercase font-bold opacity-50 block mb-1">Dark</label>
-                      <input 
-                        type="text" 
-                        value={config.emojiDark}
-                        onChange={(e) => setConfig(prev => ({ ...prev, emojiDark: e.target.value }))}
-                        className={`w-full border p-2 text-center text-base outline-none transition-colors ${isDarkMode ? 'bg-[#111] border-[#333] focus:border-[#E0E0E0]' : 'bg-white border-[#E0E0E0] focus:border-[#1A1A1A]'}`}
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[10px] uppercase font-bold opacity-50 block mb-1">Mid</label>
-                      <input 
-                        type="text" 
-                        value={config.emojiMid}
-                        onChange={(e) => setConfig(prev => ({ ...prev, emojiMid: e.target.value }))}
-                        className={`w-full border p-2 text-center text-base outline-none transition-colors ${isDarkMode ? 'bg-[#111] border-[#333] focus:border-[#E0E0E0]' : 'bg-white border-[#E0E0E0] focus:border-[#1A1A1A]'}`}
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[10px] uppercase font-bold opacity-50 block mb-1">Light</label>
-                      <input 
-                        type="text" 
-                        value={config.emojiLight}
-                        onChange={(e) => setConfig(prev => ({ ...prev, emojiLight: e.target.value }))}
-                        className={`w-full border p-2 text-center text-base outline-none transition-colors ${isDarkMode ? 'bg-[#111] border-[#333] focus:border-[#E0E0E0]' : 'bg-white border-[#E0E0E0] focus:border-[#1A1A1A]'}`}
-                      />
-                    </div>
-                  </div>
-                  
-                  <div>
-                    <label className="text-[10px] uppercase font-bold opacity-50 block mb-2">Dark/Mid Threshold: {config.emojiThreshold1}</label>
-                    <input 
-                      type="range" 
-                      min="10" 
-                      max="240" 
-                      value={config.emojiThreshold1}
-                      onChange={(e) => setConfig(prev => ({ ...prev, emojiThreshold1: parseInt(e.target.value) }))}
-                      className="w-full accent-[#1A1A1A]"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[10px] uppercase font-bold opacity-50 block mb-2">Mid/Light Threshold: {config.emojiThreshold2}</label>
-                    <input 
-                      type="range" 
-                      min="20" 
-                      max="250" 
-                      value={config.emojiThreshold2}
-                      onChange={(e) => setConfig(prev => ({ ...prev, emojiThreshold2: parseInt(e.target.value) }))}
-                      className="w-full accent-[#1A1A1A]"
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
-          </section>
-
-          <section>
-            <div className="flex items-center gap-2 mb-4">
-              <Type size={18} />
-              <h2 className="text-xs font-black uppercase tracking-widest">Overlay Text</h2>
-            </div>
-            
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <label className="text-[10px] uppercase font-bold opacity-50">Show Text</label>
-                <button 
-                  onClick={() => setConfig(prev => ({ ...prev, showOverlayText: !prev.showOverlayText }))}
-                  className={`w-10 h-5 rounded-full relative transition-colors ${config.showOverlayText ? 'bg-[#1A1A1A] dark:bg-[#E0E0E0]' : 'bg-[#E0E0E0] dark:bg-[#333]'}`}
+                <button
+                  onClick={() => setIsDarkMode(!isDarkMode)}
+                  className={`w-7 h-7 rounded-full flex items-center justify-center transition-colors ${isDarkMode ? 'hover:bg-[#1A1A1A]' : 'hover:bg-[#F5F5F5]'}`}
+                  title="Toggle theme"
                 >
-                  <div className={`absolute top-1 w-3 h-3 rounded-full transition-all ${config.showOverlayText ? 'right-1 bg-white dark:bg-[#0A0A0A]' : 'left-1 bg-white dark:bg-[#888]'}`} />
+                  {isDarkMode ? <Sun size={14} /> : <Moon size={14} />}
                 </button>
               </div>
 
-              {config.showOverlayText && (
-                <div className="space-y-4 pt-2 border-t border-[#F0F0F0] dark:border-[#333]">
-                  <div>
-                    <label className="text-[10px] uppercase font-bold opacity-50 block mb-2">Text Content</label>
-                    <input 
-                      type="text" 
-                      value={config.overlayText}
-                      onChange={(e) => setConfig(prev => ({ ...prev, overlayText: e.target.value }))}
-                      className={`w-full border p-3 text-xs font-bold outline-none transition-colors ${isDarkMode ? 'bg-[#111] border-[#333] focus:border-[#E0E0E0]' : 'bg-white border-[#E0E0E0] focus:border-[#1A1A1A]'}`}
-                    />
-                  </div>
-                  
-                  <div className="grid grid-cols-2 gap-4">
+              {/* Scrollable sections */}
+              <div className="flex-1 overflow-y-auto custom-scrollbar px-5">
+                {/* Media / Assets */}
+                <Section title="Media" isOpen={openSections.has('media')} onToggle={() => toggleSection('media')} isDarkMode={isDarkMode}>
+                  {mediaPreviewUrl ? (
                     <div>
-                      <label className="text-[10px] uppercase font-bold opacity-50 block mb-2">Size: {config.overlayTextSize}px</label>
-                      <input 
-                        type="range" 
-                        min="20" 
-                        max="400" 
-                        value={config.overlayTextSize}
-                        onChange={(e) => setConfig(prev => ({ ...prev, overlayTextSize: parseInt(e.target.value) }))}
-                        className="w-full accent-[#1A1A1A]"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[10px] uppercase font-bold opacity-50 block mb-2">Color</label>
-                      <div className="flex gap-2">
-                        <input 
-                          type="color" 
-                          value={config.overlayTextColor}
-                          onChange={(e) => setConfig(prev => ({ ...prev, overlayTextColor: e.target.value }))}
-                          className="w-8 h-8 border border-[#1A1A1A] p-0 bg-transparent cursor-pointer"
-                        />
+                      <span className="text-[11px] opacity-40 block mb-2">{mediaType === 'video' ? 'Video' : 'Image'}</span>
+                      <div className={`relative rounded-xl overflow-hidden aspect-video ${isDarkMode ? 'bg-[#141414]' : 'bg-[#F5F5F5]'}`}>
+                        {mediaType === 'video' ? (
+                          <video
+                            ref={previewVideoRef}
+                            src={mediaPreviewUrl}
+                            className="w-full h-full object-cover"
+                            autoPlay
+                            loop
+                            muted={previewMuted}
+                            playsInline
+                          />
+                        ) : (
+                          <img src={mediaPreviewUrl} className="w-full h-full object-cover" />
+                        )}
+
+                        {mediaType === 'video' && (
+                          <>
+                            <button
+                              onClick={togglePreviewPlayback}
+                              className="absolute inset-0 m-auto w-9 h-9 rounded-full bg-white/90 text-black flex items-center justify-center hover:bg-white transition-colors"
+                            >
+                              {previewPlaying ? <Pause size={14} /> : <Play size={14} className="ml-0.5" />}
+                            </button>
+                            <button
+                              onClick={togglePreviewMute}
+                              className="absolute bottom-2 left-2 w-7 h-7 rounded-full bg-white/90 text-black flex items-center justify-center hover:bg-white transition-colors"
+                            >
+                              {previewMuted ? <VolumeX size={13} /> : <Volume2 size={13} />}
+                            </button>
+                          </>
+                        )}
+
+                        <button
+                          onClick={() => fileInputRef.current?.click()}
+                          className="absolute bottom-2 right-2 w-7 h-7 rounded-full bg-white/90 text-black flex items-center justify-center hover:bg-white transition-colors"
+                          title="Replace file"
+                        >
+                          <FolderOpen size={13} />
+                        </button>
                       </div>
                     </div>
-                  </div>
+                  ) : (
+                    <button
+                      onClick={() => fileInputRef.current?.click()}
+                      className={`w-full py-8 rounded-xl border border-dashed flex flex-col items-center gap-2 transition-colors ${isDarkMode ? 'border-[#333] hover:border-[#666]' : 'border-[#DDD] hover:border-[#999]'}`}
+                    >
+                      <Upload size={18} className="opacity-50" />
+                      <span className="text-xs opacity-50">Upload photo or video</span>
+                    </button>
+                  )}
 
-                  <div className="flex items-center justify-between">
-                    <label className="text-[10px] uppercase font-bold opacity-50">Position Mode</label>
-                    <div className="flex gap-1">
-                      {(['global', 'track_ball'] as const).map(mode => (
+                  <div className={`pt-1 space-y-3 ${mediaPreviewUrl ? 'mt-1' : ''}`}>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs opacity-50">Animate with AI (Veo)</span>
+                    </div>
+                    <textarea
+                      value={aiPrompt}
+                      onChange={(e) => setAiPrompt(e.target.value)}
+                      className={`${inputCls(isDarkMode)} h-16 resize-none`}
+                      placeholder="Describe the motion to generate..."
+                    />
+                    <button
+                      onClick={generateVideo}
+                      disabled={isGeneratingVideo || !image}
+                      className={`w-full py-2.5 rounded-lg text-xs font-medium flex items-center justify-center gap-2 transition-colors disabled:opacity-30 disabled:cursor-not-allowed ${isDarkMode ? 'bg-white text-black hover:opacity-80' : 'bg-[#141414] text-white hover:opacity-80'}`}
+                    >
+                      <Sparkles size={13} />
+                      {isGeneratingVideo ? 'Generating...' : 'Animate Image'}
+                    </button>
+                    {isGeneratingVideo && (
+                      <div className="text-[11px] text-[#FF0000] animate-pulse">{generationProgress}</div>
+                    )}
+                  </div>
+                </Section>
+
+                {/* Canvas */}
+                <Section title="Canvas" isOpen={openSections.has('canvas')} onToggle={() => toggleSection('canvas')} isDarkMode={isDarkMode}>
+                  <div>
+                    <label className={labelCls}>Width: {config.canvasWidth}px</label>
+                    <input
+                      type="range" min="400" max="4000" step="100"
+                      value={config.canvasWidth}
+                      onChange={(e) => setConfig(prev => ({ ...prev, canvasWidth: parseInt(e.target.value) }))}
+                      className="w-full accent-[#141414]"
+                    />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Density</label>
+                    <div className={pillGroupCls}>
+                      {DENSITY_PRESETS.map((preset) => (
                         <button
-                          key={mode}
-                          onClick={() => setConfig(prev => ({ ...prev, overlayTextMode: mode }))}
-                          className={`px-2 py-1 text-[10px] font-bold border uppercase ${
-                            config.overlayTextMode === mode 
-                              ? (isDarkMode ? 'bg-[#E0E0E0] text-[#0A0A0A] border-[#E0E0E0]' : 'bg-[#1A1A1A] text-white border-[#1A1A1A]')
-                              : (isDarkMode ? 'border-[#333] hover:border-[#E0E0E0]' : 'border-[#E0E0E0] hover:border-[#1A1A1A]')
-                          }`}
+                          key={preset.label}
+                          onClick={() => setConfig(prev => ({ ...prev, density: preset.value }))}
+                          className={pillCls(config.density === preset.value, isDarkMode)}
                         >
-                          {mode.replace('_', ' ')}
+                          {preset.label}
                         </button>
                       ))}
                     </div>
                   </div>
-
-                  {config.overlayTextMode === 'global' && (
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="text-[10px] uppercase font-bold opacity-50 block mb-2">Pos X: {config.overlayTextPositionX}%</label>
-                        <input 
-                          type="range" 
-                          min="0" 
-                          max="100" 
-                          value={config.overlayTextPositionX}
-                          onChange={(e) => setConfig(prev => ({ ...prev, overlayTextPositionX: parseInt(e.target.value) }))}
-                          className="w-full accent-[#1A1A1A]"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-[10px] uppercase font-bold opacity-50 block mb-2">Pos Y: {config.overlayTextPositionY}%</label>
-                        <input 
-                          type="range" 
-                          min="0" 
-                          max="100" 
-                          value={config.overlayTextPositionY}
-                          onChange={(e) => setConfig(prev => ({ ...prev, overlayTextPositionY: parseInt(e.target.value) }))}
-                          className="w-full accent-[#1A1A1A]"
-                        />
-                      </div>
-                    </div>
-                  )}
-
                   <div>
-                    <label className="text-[10px] uppercase font-bold opacity-50 block mb-2">Rotation: {config.overlayTextRotation}°</label>
-                    <input 
-                      type="range" 
-                      min="-180" 
-                      max="180" 
-                      value={config.overlayTextRotation}
-                      onChange={(e) => setConfig(prev => ({ ...prev, overlayTextRotation: parseInt(e.target.value) }))}
-                      className="w-full accent-[#1A1A1A]"
+                    <label className={labelCls}>Font Size: {config.fontSize}px</label>
+                    <input
+                      type="range" min="4" max="32"
+                      value={config.fontSize}
+                      onChange={(e) => setConfig(prev => ({ ...prev, fontSize: parseInt(e.target.value) }))}
+                      className="w-full accent-[#141414]"
                     />
                   </div>
+                </Section>
 
+                {/* Color */}
+                <Section title="Color" isOpen={openSections.has('color')} onToggle={() => toggleSection('color')} isDarkMode={isDarkMode}>
                   <div>
-                    <label className="text-[10px] uppercase font-bold opacity-50 block mb-2">Rolling Speed: {config.overlayTextRollingSpeed}</label>
-                    <input 
-                      type="range" 
-                      min="-10" 
-                      max="10" 
-                      value={config.overlayTextRollingSpeed}
-                      onChange={(e) => setConfig(prev => ({ ...prev, overlayTextRollingSpeed: parseInt(e.target.value) }))}
-                      className="w-full accent-[#1A1A1A]"
-                    />
-                  </div>
-
-                  <div className="space-y-4 pt-2 border-t border-[#F0F0F0] dark:border-[#333]">
-                    <div className="flex items-center justify-between">
-                      <label className="text-[10px] uppercase font-bold opacity-50">Drift with Animation</label>
-                      <button 
-                        onClick={() => setConfig(prev => ({ ...prev, overlayTextDrift: !prev.overlayTextDrift }))}
-                        className={`w-8 h-4 rounded-full relative transition-colors ${config.overlayTextDrift ? 'bg-[#1A1A1A] dark:bg-[#E0E0E0]' : 'bg-[#E0E0E0] dark:bg-[#333]'}`}
-                      >
-                        <div className={`absolute top-0.5 w-3 h-3 rounded-full transition-all ${config.overlayTextDrift ? 'right-0.5 bg-white dark:bg-[#0A0A0A]' : 'left-0.5 bg-white dark:bg-[#888]'}`} />
-                      </button>
-                    </div>
-                    
-                    {config.overlayTextDrift && (
-                      <div className="space-y-4">
-                        <div>
-                          <label className="text-[10px] uppercase font-bold opacity-50 block mb-2">Drift Amount: {config.overlayTextDriftAmount}</label>
-                          <input 
-                            type="range" 
-                            min="0" 
-                            max="1000" 
-                            value={config.overlayTextDriftAmount}
-                            onChange={(e) => setConfig(prev => ({ ...prev, overlayTextDriftAmount: parseInt(e.target.value) }))}
-                            className="w-full accent-[#1A1A1A]"
-                          />
-                        </div>
-                        
-                        <div className="grid grid-cols-2 gap-4">
-                          <div>
-                            <label className="text-[10px] uppercase font-bold opacity-50 block mb-2">Curve</label>
-                            <select 
-                              value={config.overlayTextAnimCurve}
-                              onChange={(e) => setConfig(prev => ({ ...prev, overlayTextAnimCurve: e.target.value as any }))}
-                              className={`w-full border p-2 text-xs font-bold outline-none transition-colors ${isDarkMode ? 'bg-[#111] border-[#333]' : 'bg-white border-[#E0E0E0]'}`}
-                            >
-                              <option value="linear">Linear</option>
-                              <option value="easeIn">Ease In</option>
-                              <option value="easeOut">Ease Out</option>
-                              <option value="easeInOut">Ease In Out</option>
-                            </select>
-                          </div>
-                          <div>
-                            <label className="text-[10px] uppercase font-bold opacity-50 block mb-2">Duration: {config.overlayTextAnimDuration}s</label>
-                            <input 
-                              type="range" 
-                              min="0.1" 
-                              max="10" 
-                              step="0.1"
-                              value={config.overlayTextAnimDuration}
-                              onChange={(e) => setConfig(prev => ({ ...prev, overlayTextAnimDuration: parseFloat(e.target.value) }))}
-                              className="w-full accent-[#1A1A1A]"
-                            />
-                          </div>
-                        </div>
-
-                        <div className="flex items-center justify-between">
-                          <label className="text-[10px] uppercase font-bold opacity-50">Loop Animation</label>
-                          <button 
-                            onClick={() => setConfig(prev => ({ ...prev, overlayTextAnimLoop: !prev.overlayTextAnimLoop }))}
-                            className={`w-8 h-4 rounded-full relative transition-colors ${config.overlayTextAnimLoop ? 'bg-[#1A1A1A] dark:bg-[#E0E0E0]' : 'bg-[#E0E0E0] dark:bg-[#333]'}`}
-                          >
-                            <div className={`absolute top-0.5 w-3 h-3 rounded-full transition-all ${config.overlayTextAnimLoop ? 'right-0.5 bg-white dark:bg-[#0A0A0A]' : 'left-0.5 bg-white dark:bg-[#888]'}`} />
-                          </button>
-                        </div>
-
-                        {!config.overlayTextAnimLoop && (
-                          <button
-                            onClick={() => setConfig(prev => ({ ...prev, overlayTextAnimTrigger: performance.now() }))}
-                            className={`w-full py-2 text-xs font-bold uppercase tracking-wider border transition-colors ${isDarkMode ? 'border-[#333] hover:bg-[#333]' : 'border-[#E0E0E0] hover:bg-[#F5F5F5]'}`}
-                          >
-                            Play Animation
-                          </button>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-          </section>
-
-          <section>
-            <div className="flex items-center gap-2 mb-4">
-              <Palette size={18} />
-              <h2 className="text-xs font-black uppercase tracking-widest">Image Adjust</h2>
-            </div>
-            
-            <div className="space-y-4">
-              <div>
-                <label className="text-[10px] uppercase font-bold opacity-50 block mb-2">Contrast: {config.contrast.toFixed(1)}</label>
-                <input 
-                  type="range" 
-                  min="0.5" 
-                  max="3" 
-                  step="0.1"
-                  value={config.contrast}
-                  onChange={(e) => setConfig(prev => ({ ...prev, contrast: parseFloat(e.target.value) }))}
-                  className="w-full accent-[#1A1A1A]"
-                />
-              </div>
-              <div>
-                <label className="text-[10px] uppercase font-bold opacity-50 block mb-2">Brightness: {config.brightness.toFixed(1)}</label>
-                <input 
-                  type="range" 
-                  min="0.5" 
-                  max="2" 
-                  step="0.1"
-                  value={config.brightness}
-                  onChange={(e) => setConfig(prev => ({ ...prev, brightness: parseFloat(e.target.value) }))}
-                  className="w-full accent-[#1A1A1A]"
-                />
-              </div>
-            </div>
-          </section>
-
-          <section>
-            <div className="flex items-center gap-2 mb-4">
-              <RefreshCw size={18} />
-              <h2 className="text-xs font-black uppercase tracking-widest">Animation & Motion</h2>
-            </div>
-            
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <label className="text-[10px] uppercase font-bold opacity-50">Enable Animation</label>
-                <button 
-                  onClick={() => setConfig(prev => ({ ...prev, isAnimated: !prev.isAnimated }))}
-                  className={`w-10 h-5 rounded-full relative transition-colors ${config.isAnimated ? 'bg-[#FF0000]' : 'bg-[#E0E0E0]'}`}
-                >
-                  <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${config.isAnimated ? 'right-1' : 'left-1'}`} />
-                </button>
-              </div>
-
-              {config.isAnimated && (
-                <div className="space-y-4 pt-2 border-t border-[#F0F0F0]">
-                  <div>
-                    <label className="text-[10px] uppercase font-bold opacity-50 block mb-2">Motion Mode</label>
-                    <div className="grid grid-cols-2 gap-1">
-                      {(['float', 'flow', 'stress', 'wave', 'glitch', 'spiral', 'pulse'] as const).map((mode) => (
+                    <label className={labelCls}>Mode</label>
+                    <div className={pillGroupCls}>
+                      {(['monochrome', 'original', 'brutalist', 'invert', 'sweep'] as const).map((mode) => (
                         <button
                           key={mode}
-                          onClick={() => setConfig(prev => ({ ...prev, animationMode: mode }))}
-                          className={`py-2 text-[10px] font-bold border uppercase ${
-                            config.animationMode === mode 
-                              ? 'bg-[#FF0000] text-white border-[#FF0000]' 
-                              : 'border-[#E0E0E0] hover:border-[#1A1A1A]'
-                          }`}
+                          onClick={() => setConfig(prev => ({ ...prev, colorMode: mode }))}
+                          className={pillCls(config.colorMode === mode, isDarkMode)}
                         >
                           {mode}
                         </button>
@@ -1351,220 +960,612 @@ export default function App() {
                     </div>
                   </div>
 
-                  {config.animationMode === 'flow' && (
+                  {config.colorMode === 'monochrome' && (
                     <div>
-                      <label className="text-[10px] uppercase font-bold opacity-50 block mb-2">Flow Angle: {config.flowAngle}°</label>
-                      <input 
-                        type="range" 
-                        min="0" 
-                        max="360" 
-                        value={config.flowAngle}
-                        onChange={(e) => setConfig(prev => ({ ...prev, flowAngle: parseInt(e.target.value) }))}
-                        className="w-full accent-[#1A1A1A]"
-                      />
+                      <label className={labelCls}>Ink Color</label>
+                      <div className="flex gap-2">
+                        <input
+                          type="color"
+                          value={config.monochromeColor}
+                          onChange={(e) => setConfig(prev => ({ ...prev, monochromeColor: e.target.value }))}
+                          className="w-9 h-9 rounded-lg border-0 p-0 bg-transparent cursor-pointer"
+                        />
+                        <input
+                          type="text"
+                          value={config.monochromeColor}
+                          onChange={(e) => setConfig(prev => ({ ...prev, monochromeColor: e.target.value }))}
+                          className={`${inputCls(isDarkMode)} flex-1 uppercase`}
+                        />
+                      </div>
                     </div>
                   )}
 
-                  {config.animationMode === 'wave' && (
-                    <div>
-                      <label className="text-[10px] uppercase font-bold opacity-50 block mb-2">Wave Freq: {config.waveFrequency.toFixed(3)}</label>
-                      <input 
-                        type="range" 
-                        min="0.001" 
-                        max="0.2" 
-                        step="0.001"
-                        value={config.waveFrequency}
-                        onChange={(e) => setConfig(prev => ({ ...prev, waveFrequency: parseFloat(e.target.value) }))}
-                        className="w-full accent-[#1A1A1A]"
-                      />
+                  {config.colorMode === 'sweep' && (
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-3 gap-3">
+                        {(['sweepColor1', 'sweepColor2', 'sweepColor3'] as const).map((key, i) => (
+                          <div key={key}>
+                            <label className={labelCls}>Color {i + 1}</label>
+                            <input
+                              type="color"
+                              value={config[key]}
+                              onChange={(e) => setConfig(prev => ({ ...prev, [key]: e.target.value }))}
+                              className="w-full h-9 rounded-lg border-0 p-0 bg-transparent cursor-pointer"
+                            />
+                          </div>
+                        ))}
+                      </div>
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <label className={labelCls + ' mb-0'}>Sweep Progress</label>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[11px] opacity-50">Auto</span>
+                            <Toggle checked={config.autoSweep} onChange={() => setConfig(prev => ({ ...prev, autoSweep: !prev.autoSweep }))} isDarkMode={isDarkMode} />
+                          </div>
+                        </div>
+                        <input
+                          type="range" min="0" max="200"
+                          value={config.sweepProgress}
+                          onChange={(e) => setConfig(prev => ({ ...prev, sweepProgress: parseInt(e.target.value), autoSweep: false }))}
+                          className="w-full accent-[#141414]"
+                        />
+                      </div>
                     </div>
                   )}
+                </Section>
 
-                  {config.animationMode === 'glitch' && (
-                    <div>
-                      <label className="text-[10px] uppercase font-bold opacity-50 block mb-2">Glitch Freq: {config.glitchFrequency.toFixed(2)}</label>
-                      <input 
-                        type="range" 
-                        min="0.01" 
-                        max="0.5" 
-                        step="0.01"
-                        value={config.glitchFrequency}
-                        onChange={(e) => setConfig(prev => ({ ...prev, glitchFrequency: parseFloat(e.target.value) }))}
-                        className="w-full accent-[#1A1A1A]"
-                      />
-                    </div>
-                  )}
-
+                {/* Typography */}
+                <Section title="Typography" isOpen={openSections.has('typography')} onToggle={() => toggleSection('typography')} isDarkMode={isDarkMode}>
                   <div>
-                    <label className="text-[10px] uppercase font-bold opacity-50 block mb-2">Intensity: {config.motionIntensity.toFixed(1)}x</label>
-                    <input 
-                      type="range" 
-                      min="0.1" 
-                      max="3" 
-                      step="0.1"
-                      value={config.motionIntensity}
-                      onChange={(e) => setConfig(prev => ({ ...prev, motionIntensity: parseFloat(e.target.value) }))}
-                      className="w-full accent-[#1A1A1A]"
-                    />
+                    <label className={labelCls}>Character Mode</label>
+                    <div className={pillGroupCls}>
+                      {(['charset', 'words', 'emojis', 'sweep'] as const).map(mode => (
+                        <button
+                          key={mode}
+                          onClick={() => setConfig(prev => ({ ...prev, charMode: mode }))}
+                          className={pillCls(config.charMode === mode, isDarkMode)}
+                        >
+                          {mode}
+                        </button>
+                      ))}
+                    </div>
                   </div>
 
+                  {config.charMode === 'sweep' && (
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-3 gap-3">
+                        {(['sweepChar1', 'sweepChar2', 'sweepChar3'] as const).map((key, i) => (
+                          <div key={key}>
+                            <label className={labelCls}>Char {i + 1}</label>
+                            <input
+                              type="text"
+                              value={config[key]}
+                              onChange={(e) => setConfig(prev => ({ ...prev, [key]: e.target.value }))}
+                              className={`${inputCls(isDarkMode)} text-center text-base`}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                      {config.colorMode !== 'sweep' && (
+                        <div>
+                          <div className="flex items-center justify-between mb-2">
+                            <label className={labelCls + ' mb-0'}>Sweep Progress</label>
+                            <div className="flex items-center gap-2">
+                              <span className="text-[11px] opacity-50">Auto</span>
+                              <Toggle checked={config.autoSweep} onChange={() => setConfig(prev => ({ ...prev, autoSweep: !prev.autoSweep }))} isDarkMode={isDarkMode} />
+                            </div>
+                          </div>
+                          <input
+                            type="range" min="0" max="200"
+                            value={config.sweepProgress}
+                            onChange={(e) => setConfig(prev => ({ ...prev, sweepProgress: parseInt(e.target.value), autoSweep: false }))}
+                            className="w-full accent-[#141414]"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {config.charMode === 'words' && (
+                    <div>
+                      <label className={labelCls}>Source Words (space separated)</label>
+                      <textarea
+                        value={config.customWords}
+                        onChange={(e) => setConfig(prev => ({ ...prev, customWords: e.target.value }))}
+                        className={`${inputCls(isDarkMode)} h-20 resize-none`}
+                      />
+                    </div>
+                  )}
+
+                  {config.charMode === 'charset' && (
+                    <div>
+                      <label className={labelCls}>Character Set</label>
+                      <input
+                        type="text"
+                        value={config.charset}
+                        onChange={(e) => setConfig(prev => ({ ...prev, charset: e.target.value }))}
+                        className={inputCls(isDarkMode)}
+                      />
+                    </div>
+                  )}
+
+                  {config.charMode === 'emojis' && (
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-3 gap-3">
+                        {(['emojiDark', 'emojiMid', 'emojiLight'] as const).map((key, i) => (
+                          <div key={key}>
+                            <label className={labelCls}>{['Dark', 'Mid', 'Light'][i]}</label>
+                            <input
+                              type="text"
+                              value={config[key]}
+                              onChange={(e) => setConfig(prev => ({ ...prev, [key]: e.target.value }))}
+                              className={`${inputCls(isDarkMode)} text-center text-base`}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                      <div>
+                        <label className={labelCls}>Dark/Mid Threshold: {config.emojiThreshold1}</label>
+                        <input
+                          type="range" min="10" max="240"
+                          value={config.emojiThreshold1}
+                          onChange={(e) => setConfig(prev => ({ ...prev, emojiThreshold1: parseInt(e.target.value) }))}
+                          className="w-full accent-[#141414]"
+                        />
+                      </div>
+                      <div>
+                        <label className={labelCls}>Mid/Light Threshold: {config.emojiThreshold2}</label>
+                        <input
+                          type="range" min="20" max="250"
+                          value={config.emojiThreshold2}
+                          onChange={(e) => setConfig(prev => ({ ...prev, emojiThreshold2: parseInt(e.target.value) }))}
+                          className="w-full accent-[#141414]"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </Section>
+
+                {/* Overlay Text */}
+                <Section title="Overlay Text" isOpen={openSections.has('overlay')} onToggle={() => toggleSection('overlay')} isDarkMode={isDarkMode}>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs opacity-50">Show Text</span>
+                    <Toggle checked={config.showOverlayText} onChange={() => setConfig(prev => ({ ...prev, showOverlayText: !prev.showOverlayText }))} isDarkMode={isDarkMode} />
+                  </div>
+
+                  {config.showOverlayText && (
+                    <div className="space-y-4">
+                      <div>
+                        <label className={labelCls}>Text Content</label>
+                        <input
+                          type="text"
+                          value={config.overlayText}
+                          onChange={(e) => setConfig(prev => ({ ...prev, overlayText: e.target.value }))}
+                          className={inputCls(isDarkMode)}
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className={labelCls}>Size: {config.overlayTextSize}px</label>
+                          <input
+                            type="range" min="20" max="400"
+                            value={config.overlayTextSize}
+                            onChange={(e) => setConfig(prev => ({ ...prev, overlayTextSize: parseInt(e.target.value) }))}
+                            className="w-full accent-[#141414]"
+                          />
+                        </div>
+                        <div>
+                          <label className={labelCls}>Color</label>
+                          <input
+                            type="color"
+                            value={config.overlayTextColor}
+                            onChange={(e) => setConfig(prev => ({ ...prev, overlayTextColor: e.target.value }))}
+                            className="w-9 h-9 rounded-lg border-0 p-0 bg-transparent cursor-pointer"
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className={labelCls}>Position Mode</label>
+                        <div className={pillGroupCls}>
+                          {(['global', 'track_ball'] as const).map(mode => (
+                            <button
+                              key={mode}
+                              onClick={() => setConfig(prev => ({ ...prev, overlayTextMode: mode }))}
+                              className={pillCls(config.overlayTextMode === mode, isDarkMode)}
+                            >
+                              {mode.replace('_', ' ')}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {config.overlayTextMode === 'global' && (
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className={labelCls}>Pos X: {config.overlayTextPositionX}%</label>
+                            <input
+                              type="range" min="0" max="100"
+                              value={config.overlayTextPositionX}
+                              onChange={(e) => setConfig(prev => ({ ...prev, overlayTextPositionX: parseInt(e.target.value) }))}
+                              className="w-full accent-[#141414]"
+                            />
+                          </div>
+                          <div>
+                            <label className={labelCls}>Pos Y: {config.overlayTextPositionY}%</label>
+                            <input
+                              type="range" min="0" max="100"
+                              value={config.overlayTextPositionY}
+                              onChange={(e) => setConfig(prev => ({ ...prev, overlayTextPositionY: parseInt(e.target.value) }))}
+                              className="w-full accent-[#141414]"
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      <div>
+                        <label className={labelCls}>Rotation: {config.overlayTextRotation}°</label>
+                        <input
+                          type="range" min="-180" max="180"
+                          value={config.overlayTextRotation}
+                          onChange={(e) => setConfig(prev => ({ ...prev, overlayTextRotation: parseInt(e.target.value) }))}
+                          className="w-full accent-[#141414]"
+                        />
+                      </div>
+
+                      <div>
+                        <label className={labelCls}>Rolling Speed: {config.overlayTextRollingSpeed}</label>
+                        <input
+                          type="range" min="-10" max="10"
+                          value={config.overlayTextRollingSpeed}
+                          onChange={(e) => setConfig(prev => ({ ...prev, overlayTextRollingSpeed: parseInt(e.target.value) }))}
+                          className="w-full accent-[#141414]"
+                        />
+                      </div>
+
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs opacity-50">Drift with Animation</span>
+                        <Toggle checked={config.overlayTextDrift} onChange={() => setConfig(prev => ({ ...prev, overlayTextDrift: !prev.overlayTextDrift }))} isDarkMode={isDarkMode} />
+                      </div>
+
+                      {config.overlayTextDrift && (
+                        <div className="space-y-4">
+                          <div>
+                            <label className={labelCls}>Drift Amount: {config.overlayTextDriftAmount}</label>
+                            <input
+                              type="range" min="0" max="1000"
+                              value={config.overlayTextDriftAmount}
+                              onChange={(e) => setConfig(prev => ({ ...prev, overlayTextDriftAmount: parseInt(e.target.value) }))}
+                              className="w-full accent-[#141414]"
+                            />
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className={labelCls}>Curve</label>
+                              <select
+                                value={config.overlayTextAnimCurve}
+                                onChange={(e) => setConfig(prev => ({ ...prev, overlayTextAnimCurve: e.target.value as any }))}
+                                className={inputCls(isDarkMode)}
+                              >
+                                <option value="linear">Linear</option>
+                                <option value="easeIn">Ease In</option>
+                                <option value="easeOut">Ease Out</option>
+                                <option value="easeInOut">Ease In Out</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label className={labelCls}>Duration: {config.overlayTextAnimDuration}s</label>
+                              <input
+                                type="range" min="0.1" max="10" step="0.1"
+                                value={config.overlayTextAnimDuration}
+                                onChange={(e) => setConfig(prev => ({ ...prev, overlayTextAnimDuration: parseFloat(e.target.value) }))}
+                                className="w-full accent-[#141414]"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs opacity-50">Loop Animation</span>
+                            <Toggle checked={config.overlayTextAnimLoop} onChange={() => setConfig(prev => ({ ...prev, overlayTextAnimLoop: !prev.overlayTextAnimLoop }))} isDarkMode={isDarkMode} />
+                          </div>
+
+                          {!config.overlayTextAnimLoop && (
+                            <button
+                              onClick={() => setConfig(prev => ({ ...prev, overlayTextAnimTrigger: performance.now() }))}
+                              className={`w-full py-2 rounded-lg text-xs transition-colors border ${isDarkMode ? 'border-[#333] hover:bg-[#1A1A1A]' : 'border-[#E5E5E5] hover:bg-[#FAFAFA]'}`}
+                            >
+                              Play Animation
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </Section>
+
+                {/* Image Adjust */}
+                <Section title="Adjust" isOpen={openSections.has('adjust')} onToggle={() => toggleSection('adjust')} isDarkMode={isDarkMode}>
                   <div>
-                    <label className="text-[10px] uppercase font-bold opacity-50 block mb-2">Motion Speed: {config.animationSpeed.toFixed(1)}x</label>
-                    <input 
-                      type="range" 
-                      min="0.1" 
-                      max="5" 
-                      step="0.1"
-                      value={config.animationSpeed}
-                      onChange={(e) => setConfig(prev => ({ ...prev, animationSpeed: parseFloat(e.target.value) }))}
-                      className="w-full accent-[#1A1A1A]"
+                    <label className={labelCls}>Contrast: {config.contrast.toFixed(1)}</label>
+                    <input
+                      type="range" min="0.5" max="3" step="0.1"
+                      value={config.contrast}
+                      onChange={(e) => setConfig(prev => ({ ...prev, contrast: parseFloat(e.target.value) }))}
+                      className="w-full accent-[#141414]"
                     />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Brightness: {config.brightness.toFixed(1)}</label>
+                    <input
+                      type="range" min="0.5" max="2" step="0.1"
+                      value={config.brightness}
+                      onChange={(e) => setConfig(prev => ({ ...prev, brightness: parseFloat(e.target.value) }))}
+                      className="w-full accent-[#141414]"
+                    />
+                  </div>
+                </Section>
+
+                {/* Motion */}
+                <Section title="Motion" isOpen={openSections.has('motion')} onToggle={() => toggleSection('motion')} isDarkMode={isDarkMode}>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs opacity-50">Enable Animation</span>
+                    <Toggle checked={config.isAnimated} onChange={() => setConfig(prev => ({ ...prev, isAnimated: !prev.isAnimated }))} isDarkMode={isDarkMode} />
+                  </div>
+
+                  {config.isAnimated && (
+                    <div className="space-y-4">
+                      <div>
+                        <label className={labelCls}>Motion Mode</label>
+                        <div className={pillGroupCls}>
+                          {(['float', 'flow', 'stress', 'wave', 'glitch', 'spiral', 'pulse'] as const).map((mode) => (
+                            <button
+                              key={mode}
+                              onClick={() => setConfig(prev => ({ ...prev, animationMode: mode }))}
+                              className={pillCls(config.animationMode === mode, isDarkMode)}
+                            >
+                              {mode}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {config.animationMode === 'flow' && (
+                        <div>
+                          <label className={labelCls}>Flow Angle: {config.flowAngle}°</label>
+                          <input
+                            type="range" min="0" max="360"
+                            value={config.flowAngle}
+                            onChange={(e) => setConfig(prev => ({ ...prev, flowAngle: parseInt(e.target.value) }))}
+                            className="w-full accent-[#141414]"
+                          />
+                        </div>
+                      )}
+
+                      {config.animationMode === 'wave' && (
+                        <div>
+                          <label className={labelCls}>Wave Freq: {config.waveFrequency.toFixed(3)}</label>
+                          <input
+                            type="range" min="0.001" max="0.2" step="0.001"
+                            value={config.waveFrequency}
+                            onChange={(e) => setConfig(prev => ({ ...prev, waveFrequency: parseFloat(e.target.value) }))}
+                            className="w-full accent-[#141414]"
+                          />
+                        </div>
+                      )}
+
+                      {config.animationMode === 'glitch' && (
+                        <div>
+                          <label className={labelCls}>Glitch Freq: {config.glitchFrequency.toFixed(2)}</label>
+                          <input
+                            type="range" min="0.01" max="0.5" step="0.01"
+                            value={config.glitchFrequency}
+                            onChange={(e) => setConfig(prev => ({ ...prev, glitchFrequency: parseFloat(e.target.value) }))}
+                            className="w-full accent-[#141414]"
+                          />
+                        </div>
+                      )}
+
+                      <div>
+                        <label className={labelCls}>Intensity: {config.motionIntensity.toFixed(1)}x</label>
+                        <input
+                          type="range" min="0.1" max="3" step="0.1"
+                          value={config.motionIntensity}
+                          onChange={(e) => setConfig(prev => ({ ...prev, motionIntensity: parseFloat(e.target.value) }))}
+                          className="w-full accent-[#141414]"
+                        />
+                      </div>
+
+                      <div>
+                        <label className={labelCls}>Speed: {config.animationSpeed.toFixed(1)}x</label>
+                        <input
+                          type="range" min="0.1" max="5" step="0.1"
+                          value={config.animationSpeed}
+                          onChange={(e) => setConfig(prev => ({ ...prev, animationSpeed: parseFloat(e.target.value) }))}
+                          className="w-full accent-[#141414]"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  <div>
+                    <label className={labelCls}>Readability Boost: {(config.readability * 100).toFixed(0)}%</label>
+                    <input
+                      type="range" min="0" max="1" step="0.05"
+                      value={config.readability}
+                      onChange={(e) => setConfig(prev => ({ ...prev, readability: parseFloat(e.target.value) }))}
+                      className="w-full accent-[#141414]"
+                    />
+                  </div>
+                </Section>
+
+                {/* Export */}
+                <Section title="Export" isOpen={openSections.has('export')} onToggle={() => toggleSection('export')} isDarkMode={isDarkMode}>
+                  <div>
+                    <label className={labelCls}>GIF Frame Rate: {gifFrameRate} fps</label>
+                    <input
+                      type="range" min="5" max="60" step="1"
+                      value={gifFrameRate}
+                      onChange={(e) => setGifFrameRate(parseInt(e.target.value))}
+                      className="w-full accent-[#141414]"
+                    />
+                  </div>
+                  <div>
+                    <label className={labelCls}>GIF Quality: {gifQuality} (lower is better)</label>
+                    <input
+                      type="range" min="1" max="30" step="1"
+                      value={gifQuality}
+                      onChange={(e) => setGifQuality(parseInt(e.target.value))}
+                      className="w-full accent-[#141414]"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    <button
+                      onClick={toggleRecording}
+                      disabled={!image && !videoElement}
+                      className={`py-2.5 rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 transition-colors disabled:opacity-30 disabled:cursor-not-allowed ${isRecording ? 'bg-[#FF0000] text-white' : (isDarkMode ? 'border border-[#333] hover:bg-[#1A1A1A]' : 'border border-[#E5E5E5] hover:bg-[#FAFAFA]')}`}
+                    >
+                      {isRecording ? <Square size={12} /> : <Circle size={12} />}
+                      {isRecording ? 'Stop' : 'REC Loop'}
+                    </button>
+                    <button
+                      onClick={downloadResult}
+                      disabled={!image && !videoElement}
+                      className={`py-2.5 rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 transition-colors disabled:opacity-30 disabled:cursor-not-allowed ${isDarkMode ? 'bg-white text-black hover:opacity-80' : 'bg-[#141414] text-white hover:opacity-80'}`}
+                    >
+                      <Download size={12} />
+                      PNG
+                    </button>
+                  </div>
+                </Section>
+
+                <div className="h-4" />
+              </div>
+
+              {/* Collapse sidebar */}
+              <div className={`shrink-0 flex justify-end px-4 py-3 border-t ${isDarkMode ? 'border-[#222]' : 'border-[#EFEFEF]'}`}>
+                <button
+                  onClick={() => setSidebarCollapsed(true)}
+                  className={`w-7 h-7 rounded-full flex items-center justify-center transition-colors ${isDarkMode ? 'hover:bg-[#1A1A1A]' : 'hover:bg-[#F5F5F5]'}`}
+                  title="Collapse sidebar"
+                >
+                  <ChevronsLeft size={15} className="opacity-50" />
+                </button>
+              </div>
+            </div>
+          </motion.aside>
+        )}
+      </AnimatePresence>
+
+      {/* Canvas Area */}
+      <main className={`flex-1 relative overflow-hidden flex items-center justify-center transition-colors duration-300 ${isDarkMode ? 'bg-[#111]' : 'bg-[#FAFAFA]'}`}>
+        {sidebarCollapsed && (
+          <button
+            onClick={() => setSidebarCollapsed(false)}
+            className={`absolute bottom-5 left-5 z-20 w-9 h-9 rounded-full flex items-center justify-center shadow-md transition-colors ${isDarkMode ? 'bg-[#1A1A1A] hover:bg-[#242424]' : 'bg-white hover:bg-[#F5F5F5]'}`}
+            title="Expand sidebar"
+          >
+            <ChevronsRight size={16} className="opacity-60" />
+          </button>
+        )}
+
+        {/* Floating AI pill */}
+        <button
+          onClick={() => { setSidebarCollapsed(false); setOpenSections(prev => new Set(prev).add('media')); }}
+          className={`absolute top-5 left-1/2 -translate-x-1/2 z-20 px-4 py-2 rounded-full shadow-md flex items-center gap-2 text-xs font-medium transition-colors ${isDarkMode ? 'bg-[#1A1A1A] hover:bg-[#242424] text-white' : 'bg-white hover:bg-[#F5F5F5] text-[#141414]'}`}
+        >
+          <Sparkles size={13} />
+          Animate with AI
+        </button>
+
+        {/* Floating action cluster */}
+        <div className="absolute top-5 right-5 z-20 flex flex-col gap-2">
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            className={`w-9 h-9 rounded-full flex items-center justify-center shadow-md transition-colors ${isDarkMode ? 'bg-[#1A1A1A] hover:bg-[#242424]' : 'bg-white hover:bg-[#F5F5F5]'}`}
+            title="Upload"
+          >
+            <Upload size={14} />
+          </button>
+          <button
+            onClick={downloadResult}
+            disabled={!image && !videoElement}
+            className={`w-9 h-9 rounded-full flex items-center justify-center shadow-md transition-colors disabled:opacity-30 disabled:cursor-not-allowed ${isDarkMode ? 'bg-[#1A1A1A] hover:bg-[#242424]' : 'bg-white hover:bg-[#F5F5F5]'}`}
+            title="Export PNG"
+          >
+            <Camera size={14} />
+          </button>
+          <button
+            onClick={toggleRecording}
+            disabled={!image && !videoElement}
+            className={`w-9 h-9 rounded-full flex items-center justify-center shadow-md transition-colors disabled:opacity-30 disabled:cursor-not-allowed ${isRecording ? 'bg-[#FF0000] text-white animate-pulse' : (isDarkMode ? 'bg-[#1A1A1A] hover:bg-[#242424]' : 'bg-white hover:bg-[#F5F5F5]')}`}
+            title={isRecording ? 'Stop recording' : 'Record loop'}
+          >
+            {isRecording ? <Square size={13} /> : <Circle size={13} />}
+          </button>
+        </div>
+
+        <AnimatePresence mode="wait">
+          {(!image && !videoElement) ? (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              className={`max-w-sm w-full mx-6 rounded-2xl border p-10 text-center ${isDarkMode ? 'border-[#242424]' : 'border-[#EEE]'}`}
+            >
+              <div className={`w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-5 ${isDarkMode ? 'bg-[#1A1A1A]' : 'bg-[#F5F5F5]'}`}>
+                <ImageIcon size={20} className="opacity-60" />
+              </div>
+              <h3 className="text-base font-medium mb-1.5">No media loaded</h3>
+              <p className="text-xs opacity-50 mb-6 leading-relaxed">Upload a photo or video to start generating typographic art. High contrast works best.</p>
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className={`px-6 py-2.5 rounded-full text-xs font-medium transition-colors ${isDarkMode ? 'bg-white text-black hover:opacity-80' : 'bg-[#141414] text-white hover:opacity-80'}`}
+              >
+                Select File
+              </button>
+            </motion.div>
+          ) : (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.98 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="relative"
+            >
+              <div className={`rounded-2xl overflow-hidden ${isDarkMode ? 'bg-[#0A0A0A]' : 'bg-white'} shadow-[0_1px_3px_rgba(0,0,0,0.08)]`}>
+                <canvas
+                  ref={canvasRef}
+                  className="max-w-[80vw] max-h-[78vh] object-contain block"
+                />
+                {/* Render video invisibly to ensure browser doesn't pause it */}
+                <div
+                  style={{ display: 'none' }}
+                  ref={(el) => {
+                    if (el && videoElement && !el.contains(videoElement)) {
+                      el.innerHTML = '';
+                      el.appendChild(videoElement);
+                      videoElement.play().catch(console.error);
+                    }
+                  }}
+                />
+              </div>
+
+              {isProcessing && (
+                <div className={`absolute inset-0 rounded-2xl backdrop-blur-[2px] flex items-center justify-center ${isDarkMode ? 'bg-black/30' : 'bg-white/40'}`}>
+                  <div className={`px-5 py-2.5 rounded-full text-xs font-medium flex items-center gap-2 ${isDarkMode ? 'bg-white text-black' : 'bg-[#141414] text-white'}`}>
+                    <RefreshCw size={13} className="animate-spin" />
+                    Processing
                   </div>
                 </div>
               )}
+            </motion.div>
+          )}
+        </AnimatePresence>
 
-              <div>
-                <label className="text-[10px] uppercase font-bold opacity-50 block mb-2">Readability Boost: {(config.readability * 100).toFixed(0)}%</label>
-                <input 
-                  type="range" 
-                  min="0" 
-                  max="1" 
-                  step="0.05"
-                  value={config.readability}
-                  onChange={(e) => setConfig(prev => ({ ...prev, readability: parseFloat(e.target.value) }))}
-                  className="w-full accent-[#1A1A1A]"
-                />
-              </div>
-            </div>
-          </section>
-
-          <section>
-            <div className="flex items-center gap-2 mb-4">
-              <Download size={18} />
-              <h2 className="text-xs font-black uppercase tracking-widest">Export Settings</h2>
-            </div>
-            <div className="space-y-4">
-              <div>
-                <label className="text-[10px] uppercase font-bold opacity-50 block mb-2">GIF Frame Rate: {gifFrameRate} fps</label>
-                <input 
-                  type="range" 
-                  min="5" 
-                  max="60" 
-                  step="1"
-                  value={gifFrameRate}
-                  onChange={(e) => setGifFrameRate(parseInt(e.target.value))}
-                  className={`w-full accent-[#FF0000] ${isDarkMode ? 'bg-[#333]' : 'bg-[#E0E0E0]'}`}
-                />
-              </div>
-              <div>
-                <label className="text-[10px] uppercase font-bold opacity-50 block mb-2">GIF Quality: {gifQuality} (Lower is better)</label>
-                <input 
-                  type="range" 
-                  min="1" 
-                  max="30" 
-                  step="1"
-                  value={gifQuality}
-                  onChange={(e) => setGifQuality(parseInt(e.target.value))}
-                  className={`w-full accent-[#FF0000] ${isDarkMode ? 'bg-[#333]' : 'bg-[#E0E0E0]'}`}
-                />
-              </div>
-            </div>
-          </section>
-
-          <div className={`pt-4 border-t ${isDarkMode ? 'border-[#333]' : 'border-[#E0E0E0]'}`}>
-            <button 
-              onClick={() => renderFrame(0)}
-              className={`w-full py-4 font-black uppercase tracking-widest text-xs flex items-center justify-center gap-2 transition-colors ${isDarkMode ? 'bg-[#E0E0E0] text-[#0A0A0A] hover:bg-[#FF0000] hover:text-white' : 'bg-[#1A1A1A] text-white hover:bg-[#FF0000]'}`}
-            >
-              <RefreshCw size={14} className={isProcessing ? 'animate-spin' : ''} />
-              Refresh Engine
-            </button>
-          </div>
-        </aside>
-
-        {/* Preview Area */}
-        <section className={`flex-1 relative overflow-hidden flex items-center justify-center p-8 transition-colors duration-300 ${isDarkMode ? 'bg-[#111]' : 'bg-[#E5E5E5]'}`}>
-          <AnimatePresence mode="wait">
-            {(!image && !videoElement) ? (
-              <motion.div 
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-                className={`max-w-md w-full border-2 border-dashed p-12 text-center backdrop-blur-sm transition-colors ${isDarkMode ? 'bg-white/5 border-[#333]' : 'bg-white/50 border-[#1A1A1A]'}`}
-              >
-                <div className={`w-16 h-16 flex items-center justify-center mx-auto mb-6 transition-colors ${isDarkMode ? 'bg-[#E0E0E0] text-[#0A0A0A]' : 'bg-[#1A1A1A] text-white'}`}>
-                  <ImageIcon size={32} />
-                </div>
-                <h3 className="text-xl font-black uppercase tracking-tight mb-2">No Media Loaded</h3>
-                <p className="text-sm opacity-60 mb-8">Upload a photo or video to start generating typographic art. High contrast works best.</p>
-                <button 
-                  onClick={() => fileInputRef.current?.click()}
-                  className={`px-8 py-3 font-bold uppercase tracking-widest text-xs transition-colors ${isDarkMode ? 'bg-[#E0E0E0] text-[#0A0A0A] hover:bg-[#FF0000] hover:text-white' : 'bg-[#1A1A1A] text-white hover:bg-[#FF0000]'}`}
-                >
-                  Select File
-                </button>
-              </motion.div>
-            ) : (
-              <motion.div 
-                initial={{ opacity: 0, scale: 0.98 }}
-                animate={{ opacity: 1, scale: 1 }}
-                className="relative group cursor-crosshair"
-              >
-                <div className="absolute -top-6 left-0 text-[10px] font-mono uppercase opacity-40 flex items-center gap-2">
-                  <Move size={10} />
-                  Preview Canvas | {canvasRef.current?.width}x{canvasRef.current?.height}
-                </div>
-                
-                <div className={`shadow-[20px_20px_0px_0px_rgba(0,0,0,0.1)] border p-4 transition-colors ${isDarkMode ? 'bg-[#0A0A0A] border-[#333]' : 'bg-white border-[#1A1A1A]'}`}>
-                  <canvas 
-                    ref={canvasRef} 
-                    className="max-w-full max-h-[70vh] object-contain"
-                  />
-                  {/* Render video invisibly to ensure browser doesn't pause it */}
-                  <div 
-                    style={{ display: 'none' }} 
-                    ref={(el) => {
-                      if (el && videoElement && !el.contains(videoElement)) {
-                        el.innerHTML = '';
-                        el.appendChild(videoElement);
-                        videoElement.play().catch(console.error);
-                      }
-                    }}
-                  />
-                </div>
-
-                {isProcessing && (
-                  <div className={`absolute inset-0 backdrop-blur-[2px] flex items-center justify-center transition-colors ${isDarkMode ? 'bg-black/40' : 'bg-white/40'}`}>
-                    <div className={`px-6 py-3 font-black uppercase tracking-widest text-xs flex items-center gap-3 transition-colors ${isDarkMode ? 'bg-[#E0E0E0] text-[#0A0A0A]' : 'bg-[#1A1A1A] text-white'}`}>
-                      <RefreshCw size={14} className="animate-spin" />
-                      Processing...
-                    </div>
-                  </div>
-                )}
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          {/* Decorative Elements */}
-          <div className="absolute bottom-6 left-6 text-[10px] font-mono uppercase opacity-30 text-left space-y-1">
-            <div>Engine: TaskGraph v2.0-Machine</div>
-            <div>Status: {isProcessing ? 'Processing' : 'Idle'}</div>
-            <div>Resolution: {canvasRef.current?.width} x {canvasRef.current?.height}</div>
-            <div>Frame: {Math.floor(Date.now() / 16) % 10000}</div>
-          </div>
-          
-          <div className="absolute top-6 left-6 flex flex-col gap-1">
-            {[...Array(8)].map((_, i) => (
-              <div key={i} className={`w-12 h-[1px] opacity-10 ${isDarkMode ? 'bg-white' : 'bg-[#1A1A1A]'}`} />
-            ))}
-          </div>
-
-          <div className="absolute top-1/2 right-6 -translate-y-1/2 flex flex-col gap-4 opacity-20">
-            <div className="writing-vertical-rl text-[8px] font-mono uppercase tracking-[0.5em]">System.Active</div>
-            <div className={`w-[1px] h-32 mx-auto ${isDarkMode ? 'bg-white' : 'bg-[#1A1A1A]'}`} />
-            <div className="writing-vertical-rl text-[8px] font-mono uppercase tracking-[0.5em]">Buffer.Sync</div>
-          </div>
-        </section>
+        {/* Meta label */}
+        <div className="absolute bottom-5 right-5 text-[11px] opacity-30 font-mono">
+          {canvasRef.current?.width || 0}×{canvasRef.current?.height || 0}px
+        </div>
       </main>
     </div>
   );
