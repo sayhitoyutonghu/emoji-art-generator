@@ -62,11 +62,47 @@ const STYLE_PRESETS: StylePreset[] = [
   },
 ];
 
+// Aspect ratio options for the canvas frame. 'source' follows the uploaded
+// media's own ratio; the rest crop/cover the source into a fixed frame.
+const ASPECT_RATIOS: { id: string; label: string; w: number; h: number }[] = [
+  { id: 'source', label: 'Auto', w: 1, h: 1 },
+  { id: '1:1', label: '1:1', w: 1, h: 1 },
+  { id: '4:3', label: '4:3', w: 4, h: 3 },
+  { id: '3:4', label: '3:4', w: 3, h: 4 },
+  { id: '16:9', label: '16:9', w: 16, h: 9 },
+  { id: '9:16', label: '9:16', w: 9, h: 16 },
+];
+
+function computeCanvasDims(canvasWidth: number, aspectRatio: string, srcW: number, srcH: number) {
+  if (aspectRatio === 'source' || !srcW || !srcH) {
+    return { width: canvasWidth, height: Math.round(srcH * (canvasWidth / srcW)) || canvasWidth };
+  }
+  const [rw, rh] = aspectRatio.split(':').map(Number);
+  return { width: canvasWidth, height: Math.round((canvasWidth * rh) / rw) };
+}
+
+// Draw source into a target of dw×dh using object-fit: cover (preserve aspect,
+// crop overflow, center) so a fixed frame never distorts the image.
+function drawCover(
+  ctx: CanvasRenderingContext2D,
+  src: CanvasImageSource,
+  sw: number,
+  sh: number,
+  dw: number,
+  dh: number,
+) {
+  const scale = Math.max(dw / sw, dh / sh);
+  const w = sw * scale;
+  const h = sh * scale;
+  ctx.drawImage(src, (dw - w) / 2, (dh - h) / 2, w, h);
+}
+
 interface Config {
   charset: string;
   density: number;
   fontSize: number;
   canvasWidth: number;
+  aspectRatio: string;
   colorMode: 'original' | 'monochrome' | 'brutalist' | 'invert' | 'sweep';
   monochromeColor: string;
   sweepColor1: string;
@@ -210,6 +246,7 @@ export default function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [activePreset, setActivePreset] = useState<string | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [canvasDims, setCanvasDims] = useState({ width: 0, height: 0 });
 
   const applyPreset = (preset: StylePreset) => {
     setConfig(prev => ({ ...prev, ...preset.config }));
@@ -251,6 +288,7 @@ export default function App() {
     density: 8,
     fontSize: 10,
     canvasWidth: 1200,
+    aspectRatio: 'source',
     colorMode: 'monochrome',
     monochromeColor: '#000000',
     sweepColor1: '#22C55E',
@@ -326,13 +364,14 @@ export default function App() {
     const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true });
     if (!tempCtx) return;
     
-    const scale = config.canvasWidth / sourceWidth;
-    tempCanvas.width = config.canvasWidth;
-    tempCanvas.height = sourceHeight * scale;
+    const dims = computeCanvasDims(config.canvasWidth, config.aspectRatio, sourceWidth, sourceHeight);
+    tempCanvas.width = dims.width;
+    tempCanvas.height = dims.height;
 
     const draw = (t: number) => {
       // For video, we must re-sample the pixels every frame
-      tempCtx.drawImage(mediaSource, 0, 0, tempCanvas.width, tempCanvas.height);
+      tempCtx.clearRect(0, 0, tempCanvas.width, tempCanvas.height);
+      drawCover(tempCtx, mediaSource, sourceWidth, sourceHeight, tempCanvas.width, tempCanvas.height);
       const imageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
       const pixels = imageData.data;
 
@@ -602,9 +641,10 @@ export default function App() {
         const sourceWidth = videoElement ? videoElement.videoWidth : image!.width;
         const sourceHeight = videoElement ? videoElement.videoHeight : image!.height;
         if (sourceWidth > 0) {
-          const scale = config.canvasWidth / sourceWidth;
-          canvas.width = config.canvasWidth;
-          canvas.height = sourceHeight * scale;
+          const dims = computeCanvasDims(config.canvasWidth, config.aspectRatio, sourceWidth, sourceHeight);
+          canvas.width = dims.width;
+          canvas.height = dims.height;
+          setCanvasDims(dims);
         }
       }
       
@@ -1002,6 +1042,49 @@ export default function App() {
                 <div className={`border-t ${isDarkMode ? 'border-[#222]' : 'border-[#EFEFEF]'}`}>
                 {/* Canvas */}
                 <Section title="Canvas" isOpen={openSections.has('canvas')} onToggle={() => toggleSection('canvas')} isDarkMode={isDarkMode}>
+                  <div>
+                    <label className={labelCls}>Aspect Ratio</label>
+                    <div className="flex gap-1.5 justify-between">
+                      {ASPECT_RATIOS.map((r) => {
+                        const maxDim = 26;
+                        const rw = r.w >= r.h ? maxDim : Math.round((maxDim * r.w) / r.h);
+                        const rh = r.h >= r.w ? maxDim : Math.round((maxDim * r.h) / r.w);
+                        const active = config.aspectRatio === r.id;
+                        return (
+                          <button
+                            key={r.id}
+                            onClick={() => setConfig(prev => ({ ...prev, aspectRatio: r.id }))}
+                            className="flex flex-col items-center gap-1.5 group"
+                            title={r.id === 'source' ? 'Match source' : r.label}
+                          >
+                            <div className="h-[30px] flex items-center justify-center">
+                              {r.id === 'source' ? (
+                                <div
+                                  className={`w-[22px] h-[22px] rounded-[3px] border border-dashed flex items-center justify-center text-[8px] ${
+                                    active
+                                      ? (isDarkMode ? 'border-white text-white' : 'border-[#141414] text-[#141414]')
+                                      : (isDarkMode ? 'border-[#444] text-[#666]' : 'border-[#CCC] text-[#AAA]')
+                                  }`}
+                                >
+                                  A
+                                </div>
+                              ) : (
+                                <div
+                                  style={{ width: rw, height: rh }}
+                                  className={`rounded-[3px] border transition-colors ${
+                                    active
+                                      ? (isDarkMode ? 'bg-white border-white' : 'bg-[#141414] border-[#141414]')
+                                      : (isDarkMode ? 'border-[#444] group-hover:border-[#777]' : 'border-[#CCC] group-hover:border-[#999]')
+                                  }`}
+                                />
+                              )}
+                            </div>
+                            <span className={`text-[9px] ${active ? 'opacity-100 font-medium' : 'opacity-40'}`}>{r.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
                   <div>
                     <label className={labelCls}>Width: {config.canvasWidth}px</label>
                     <input
@@ -1660,7 +1743,7 @@ export default function App() {
 
         {/* Meta label */}
         <div className="absolute bottom-5 right-5 text-[11px] opacity-30 font-mono">
-          {canvasRef.current?.width || 0}×{canvasRef.current?.height || 0}px
+          {canvasDims.width || 0}×{canvasDims.height || 0}px
         </div>
       </main>
     </div>
