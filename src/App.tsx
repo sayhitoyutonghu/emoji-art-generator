@@ -37,33 +37,33 @@ interface StylePreset {
 const STYLE_PRESETS: StylePreset[] = [
   {
     id: 'ascii',
-    name: 'ASCII Terminal',
+    name: 'ASCII',
     swatch: { bg: '#000000', fg: '#FFFFFF', sample: '#@%+=:' },
-    config: { dither: false, charMode: 'charset', charset: ' .:-=+*#%@$MW059', colorMode: 'invert', density: 100, isAnimated: false },
+    config: { dither: false, cross: false, charMode: 'charset', charset: ' .:-=+*#%@$MW059', colorMode: 'invert', density: 100, isAnimated: false },
   },
   {
-    id: 'mono',
-    name: 'Mono Dots',
-    swatch: { bg: '#FFFFFF', fg: '#000000', sample: '#+=-:.' },
-    config: { dither: false, charMode: 'charset', charset: ' .:-=+#', colorMode: 'monochrome', monochromeColor: '#000000', density: 100, isAnimated: false },
+    id: 'cross',
+    name: 'Cross Halftone',
+    swatch: { bg: '#F9BB92', fg: '#141414', sample: '+ + +' },
+    config: { dither: false, cross: true, colorMode: 'monochrome', monochromeColor: '#141414', density: 60, contrast: 1.3, isAnimated: false },
   },
   {
     id: 'emoji',
     name: 'Emoji Mosaic',
     swatch: { bg: '#F2F2F2', fg: '#000000', sample: '🧍🪨☁️' },
-    config: { dither: false, charMode: 'emojis', colorMode: 'original', density: 48, isAnimated: false },
+    config: { dither: false, cross: false, charMode: 'emojis', colorMode: 'original', density: 48, isAnimated: false },
   },
   {
     id: 'sweep',
     name: 'Color Sweep',
     swatch: { bg: '#111111', fg: '#22C55E', sample: '▓▒░' },
-    config: { dither: false, charMode: 'sweep', colorMode: 'sweep', autoSweep: true, density: 72, isAnimated: false },
+    config: { dither: false, cross: false, charMode: 'sweep', colorMode: 'sweep', autoSweep: true, density: 72, isAnimated: false },
   },
   {
     id: 'dither',
     name: 'Dither',
     swatch: { bg: '#F5F0E6', fg: '#E0491B', sample: '▚▞▟' },
-    config: { dither: true, colorMode: 'monochrome', monochromeColor: '#E0491B', density: 130, contrast: 1.8, isAnimated: false },
+    config: { dither: true, cross: false, colorMode: 'monochrome', monochromeColor: '#E0491B', density: 130, contrast: 1.8, isAnimated: false },
   },
 ];
 
@@ -109,6 +109,7 @@ interface Config {
   canvasWidth: number;
   aspectRatio: string;
   dither: boolean;
+  cross: boolean;
   colorMode: 'original' | 'monochrome' | 'brutalist' | 'invert' | 'sweep';
   monochromeColor: string;
   sweepColor1: string;
@@ -296,6 +297,7 @@ export default function App() {
     canvasWidth: 1200,
     aspectRatio: 'source',
     dither: false,
+    cross: false,
     colorMode: 'monochrome',
     monochromeColor: '#000000',
     sweepColor1: '#22C55E',
@@ -452,6 +454,26 @@ export default function App() {
             ctx.fillStyle = inverted ? '#FFFFFF' : config.monochromeColor;
             // Solid square pixel (fillText block glyphs distort into bars).
             ctx.fillRect(Math.floor(x), Math.floor(y), Math.ceil(cellSize) + 0.5, Math.ceil(cellSize) + 0.5);
+            continue;
+          }
+
+          // Cross-halftone path: a plus sign per cell, sized by darkness; the
+          // lightest cells shrink to dots. Drawn from rects for crisp arms.
+          if (config.cross) {
+            const inverted = config.colorMode === 'invert';
+            const v = inverted ? brightness / 255 : 1 - brightness / 255; // ink amount 0..1
+            if (v <= 0.05) continue;
+            ctx.fillStyle = inverted ? '#FFFFFF' : config.monochromeColor;
+            const size = cellSize * Math.min(1.15, v * 1.25);
+            if (v < 0.28) {
+              ctx.beginPath();
+              ctx.arc(x, y, Math.max(0.8, size * 0.2), 0, Math.PI * 2);
+              ctx.fill();
+            } else {
+              const arm = Math.max(1, size * 0.34);
+              ctx.fillRect(x - arm / 2, y - size / 2, arm, size);
+              ctx.fillRect(x - size / 2, y - arm / 2, size, arm);
+            }
             continue;
           }
 
