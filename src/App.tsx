@@ -243,7 +243,7 @@ export default function App() {
   // UI Layout State
   const [openSections, setOpenSections] = useState<Set<string>>(new Set(['canvas']));
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [activePreset, setActivePreset] = useState<string | null>('emoji');
+  const [activePreset, setActivePreset] = useState<string | null>('ascii');
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [canvasDims, setCanvasDims] = useState({ width: 0, height: 0 });
 
@@ -283,8 +283,8 @@ export default function App() {
   };
 
   const [config, setConfig] = useState<Config>({
-    charset: DEFAULT_CHARSET,
-    density: 140,
+    charset: ' .:-=+*#%@$MW059',
+    density: 100,
     fontSize: 100,
     canvasWidth: 4000,
     aspectRatio: 'source',
@@ -292,8 +292,8 @@ export default function App() {
     cross: false,
     showVideo: false,
     videoDim: 0.9,
-    colorMode: 'original',
-    monochromeColor: '#000000',
+    colorMode: 'monochrome',
+    monochromeColor: '#141414',
     sweepColor1: '#22C55E',
     sweepColor2: '#EF4444',
     sweepColor3: '#3B82F6',
@@ -302,7 +302,7 @@ export default function App() {
     contrast: 1.3,
     brightness: 1.0,
     customWords: "✅ 🔘 📝 ⏳ TODO DONE TASK",
-    charMode: 'emojis',
+    charMode: 'charset',
     emojiDark: '🪨',
     emojiMid: '',
     emojiLight: '☁️',
