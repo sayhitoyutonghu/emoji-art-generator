@@ -53,12 +53,6 @@ const STYLE_PRESETS: StylePreset[] = [
     config: { dither: false, cross: false, charMode: 'emojis', colorMode: 'original', density: 48, isAnimated: false },
   },
   {
-    id: 'sweep',
-    name: 'Color Sweep',
-    swatch: { bg: '#111111', fg: '#22C55E', sample: '▓▒░' },
-    config: { dither: false, cross: false, charMode: 'sweep', colorMode: 'sweep', autoSweep: true, density: 72, isAnimated: false },
-  },
-  {
     id: 'dither',
     name: 'Dither',
     swatch: { bg: '#F5F0E6', fg: '#E0491B', sample: '▚▞▟' },
@@ -1015,7 +1009,7 @@ export default function App() {
                   <div>
                     <label className={labelCls}>Mode</label>
                     <div className={pillGroupCls}>
-                      {(['monochrome', 'original', 'brutalist', 'invert', 'sweep'] as const).map((mode) => (
+                      {(['monochrome', 'original', 'brutalist', 'invert'] as const).map((mode) => (
                         <button
                           key={mode}
                           onClick={() => setConfig(prev => ({ ...prev, colorMode: mode }))}
@@ -1047,38 +1041,6 @@ export default function App() {
                     </div>
                   )}
 
-                  {config.colorMode === 'sweep' && (
-                    <div className="space-y-4">
-                      <div className="grid grid-cols-3 gap-3">
-                        {(['sweepColor1', 'sweepColor2', 'sweepColor3'] as const).map((key, i) => (
-                          <div key={key}>
-                            <label className={labelCls}>Color {i + 1}</label>
-                            <input
-                              type="color"
-                              value={config[key]}
-                              onChange={(e) => setConfig(prev => ({ ...prev, [key]: e.target.value }))}
-                              className="w-full h-9 rounded-lg border-0 p-0 bg-transparent cursor-pointer"
-                            />
-                          </div>
-                        ))}
-                      </div>
-                      <div>
-                        <div className="flex items-center justify-between mb-2">
-                          <label className={labelCls + ' mb-0'}>Sweep Progress</label>
-                          <div className="flex items-center gap-2">
-                            <span className="text-[11px] opacity-50">Auto</span>
-                            <Toggle checked={config.autoSweep} onChange={() => setConfig(prev => ({ ...prev, autoSweep: !prev.autoSweep }))} isDarkMode={isDarkMode} />
-                          </div>
-                        </div>
-                        <input
-                          type="range" min="0" max="200"
-                          value={config.sweepProgress}
-                          onChange={(e) => setConfig(prev => ({ ...prev, sweepProgress: parseInt(e.target.value), autoSweep: false }))}
-                          className="w-full accent-[#141414]"
-                        />
-                      </div>
-                    </div>
-                  )}
                 </Section>
 
                 {/* Image Adjust */}
