@@ -109,6 +109,8 @@ interface Config {
   aspectRatio: string;
   dither: boolean;
   cross: boolean;
+  showVideo: boolean;
+  videoDim: number;
   colorMode: 'original' | 'monochrome' | 'brutalist' | 'invert' | 'sweep';
   monochromeColor: string;
   sweepColor1: string;
@@ -294,6 +296,8 @@ export default function App() {
     aspectRatio: 'source',
     dither: false,
     cross: false,
+    showVideo: false,
+    videoDim: 0.9,
     colorMode: 'monochrome',
     monochromeColor: '#000000',
     sweepColor1: '#22C55E',
@@ -380,8 +384,19 @@ export default function App() {
       const imageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
       const pixels = imageData.data;
 
-      ctx.fillStyle = config.colorMode === 'invert' ? '#000000' : '#FFFFFF';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      const bgColor = config.colorMode === 'invert' ? '#000000' : '#FFFFFF';
+      if (config.showVideo) {
+        // Draw the real source underneath, then a dim overlay so the footage
+        // reads as a faint backdrop that bleeds through the character grid.
+        drawCover(ctx, mediaSource, sourceWidth, sourceHeight, canvas.width, canvas.height);
+        ctx.fillStyle = bgColor;
+        ctx.globalAlpha = config.videoDim;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.globalAlpha = 1;
+      } else {
+        ctx.fillStyle = bgColor;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+      }
 
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
@@ -969,6 +984,28 @@ export default function App() {
                         onChange={(e) => setConfig(prev => ({ ...prev, fontSize: parseInt(e.target.value) }))}
                         className="w-full accent-[#141414]"
                       />
+                    </div>
+                  )}
+                </Section>
+
+                {/* Backdrop */}
+                <Section title="Backdrop" isOpen={openSections.has('backdrop')} onToggle={() => toggleSection('backdrop')} isDarkMode={isDarkMode}>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs opacity-50">Show video behind</span>
+                    <Toggle checked={config.showVideo} onChange={() => setConfig(prev => ({ ...prev, showVideo: !prev.showVideo }))} isDarkMode={isDarkMode} />
+                  </div>
+                  {config.showVideo && (
+                    <div>
+                      <label className={labelCls}>Video Dim: {config.videoDim.toFixed(2)}</label>
+                      <input
+                        type="range" min="0" max="1" step="0.01"
+                        value={config.videoDim}
+                        onChange={(e) => setConfig(prev => ({ ...prev, videoDim: parseFloat(e.target.value) }))}
+                        className="w-full accent-[#141414]"
+                      />
+                      <p className="text-[10px] opacity-40 mt-1.5 leading-relaxed">
+                        Higher = footage more hidden behind the glyphs; lower = it bleeds through.
+                      </p>
                     </div>
                   )}
                 </Section>
