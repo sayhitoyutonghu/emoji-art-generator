@@ -1039,7 +1039,8 @@ export default function App() {
                   )}
                 </Section>
 
-                {/* Color */}
+                {/* Color — hidden in emoji mode, where glyphs keep their own colors */}
+                {(config.dither || config.cross || config.charMode !== 'emojis') && (
                 <Section title="Color" isOpen={openSections.has('color')} onToggle={() => toggleSection('color')} isDarkMode={isDarkMode}>
                   <div>
                     <label className={labelCls}>Mode</label>
@@ -1077,6 +1078,7 @@ export default function App() {
                   )}
 
                 </Section>
+                )}
 
                 {/* Image Adjust */}
                 <Section title="Adjust" isOpen={openSections.has('adjust')} onToggle={() => toggleSection('adjust')} isDarkMode={isDarkMode}>
