@@ -709,13 +709,22 @@ export default function App() {
       }
     } else {
       if (!canvasRef.current) return;
+      // GIF encoding is pure-JS palette quantization per frame, so it stalls on
+      // large canvases (a 4000px export = 16MP/frame). Cap the recording to a
+      // modest resolution — the PNG export stays full-size, only the GIF shrinks.
+      const MAX_GIF_DIM = 720;
+      const srcW = canvasRef.current.width;
+      const srcH = canvasRef.current.height;
+      const scale = Math.min(1, MAX_GIF_DIM / Math.max(srcW, srcH));
+      const gifW = Math.max(1, Math.round(srcW * scale));
+      const gifH = Math.max(1, Math.round(srcH * scale));
       const stream = canvasRef.current.captureStream(gifFrameRate);
-      const recorder = new RecordRTC(stream, { 
+      const recorder = new RecordRTC(stream, {
         type: 'gif',
         frameRate: gifFrameRate,
         quality: gifQuality,
-        width: config.canvasWidth,
-        height: canvasRef.current.height
+        width: gifW,
+        height: gifH,
       } as any);
       recorder.startRecording();
       setIsRecording(true);
