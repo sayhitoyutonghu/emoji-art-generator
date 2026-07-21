@@ -1044,7 +1044,7 @@ export default function App() {
                   <div>
                     <label className={labelCls}>Mode</label>
                     <div className={pillGroupCls}>
-                      {(['monochrome', 'original', 'brutalist', 'invert'] as const).map((mode) => (
+                      {(['monochrome', 'original', 'invert'] as const).map((mode) => (
                         <button
                           key={mode}
                           onClick={() => setConfig(prev => ({ ...prev, colorMode: mode }))}
@@ -1095,99 +1095,6 @@ export default function App() {
                       type="range" min="0.5" max="2" step="0.1"
                       value={config.brightness}
                       onChange={(e) => setConfig(prev => ({ ...prev, brightness: parseFloat(e.target.value) }))}
-                      className="w-full accent-[#141414]"
-                    />
-                  </div>
-                </Section>
-
-                {/* Motion */}
-                <Section title="Motion" isOpen={openSections.has('motion')} onToggle={() => toggleSection('motion')} isDarkMode={isDarkMode}>
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs opacity-50">Enable Animation</span>
-                    <Toggle checked={config.isAnimated} onChange={() => setConfig(prev => ({ ...prev, isAnimated: !prev.isAnimated }))} isDarkMode={isDarkMode} />
-                  </div>
-
-                  {config.isAnimated && (
-                    <div className="space-y-4">
-                      <div>
-                        <label className={labelCls}>Motion Mode</label>
-                        <div className={pillGroupCls}>
-                          {(['float', 'flow', 'stress', 'wave', 'glitch', 'spiral', 'pulse'] as const).map((mode) => (
-                            <button
-                              key={mode}
-                              onClick={() => setConfig(prev => ({ ...prev, animationMode: mode }))}
-                              className={pillCls(config.animationMode === mode, isDarkMode)}
-                            >
-                              {mode}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-
-                      {config.animationMode === 'flow' && (
-                        <div>
-                          <label className={labelCls}>Flow Angle: {config.flowAngle}°</label>
-                          <input
-                            type="range" min="0" max="360"
-                            value={config.flowAngle}
-                            onChange={(e) => setConfig(prev => ({ ...prev, flowAngle: parseInt(e.target.value) }))}
-                            className="w-full accent-[#141414]"
-                          />
-                        </div>
-                      )}
-
-                      {config.animationMode === 'wave' && (
-                        <div>
-                          <label className={labelCls}>Wave Freq: {config.waveFrequency.toFixed(3)}</label>
-                          <input
-                            type="range" min="0.001" max="0.2" step="0.001"
-                            value={config.waveFrequency}
-                            onChange={(e) => setConfig(prev => ({ ...prev, waveFrequency: parseFloat(e.target.value) }))}
-                            className="w-full accent-[#141414]"
-                          />
-                        </div>
-                      )}
-
-                      {config.animationMode === 'glitch' && (
-                        <div>
-                          <label className={labelCls}>Glitch Freq: {config.glitchFrequency.toFixed(2)}</label>
-                          <input
-                            type="range" min="0.01" max="0.5" step="0.01"
-                            value={config.glitchFrequency}
-                            onChange={(e) => setConfig(prev => ({ ...prev, glitchFrequency: parseFloat(e.target.value) }))}
-                            className="w-full accent-[#141414]"
-                          />
-                        </div>
-                      )}
-
-                      <div>
-                        <label className={labelCls}>Intensity: {config.motionIntensity.toFixed(1)}x</label>
-                        <input
-                          type="range" min="0.1" max="3" step="0.1"
-                          value={config.motionIntensity}
-                          onChange={(e) => setConfig(prev => ({ ...prev, motionIntensity: parseFloat(e.target.value) }))}
-                          className="w-full accent-[#141414]"
-                        />
-                      </div>
-
-                      <div>
-                        <label className={labelCls}>Speed: {config.animationSpeed.toFixed(1)}x</label>
-                        <input
-                          type="range" min="0.1" max="5" step="0.1"
-                          value={config.animationSpeed}
-                          onChange={(e) => setConfig(prev => ({ ...prev, animationSpeed: parseFloat(e.target.value) }))}
-                          className="w-full accent-[#141414]"
-                        />
-                      </div>
-                    </div>
-                  )}
-
-                  <div>
-                    <label className={labelCls}>Readability Boost: {(config.readability * 100).toFixed(0)}%</label>
-                    <input
-                      type="range" min="0" max="1" step="0.05"
-                      value={config.readability}
-                      onChange={(e) => setConfig(prev => ({ ...prev, readability: parseFloat(e.target.value) }))}
                       className="w-full accent-[#141414]"
                     />
                   </div>
