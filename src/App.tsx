@@ -875,6 +875,41 @@ export default function App() {
                   </div>
                 </div>
 
+                {/* CHARACTERS — contextual to the active preset */}
+                {!config.dither && !config.cross && config.charMode === 'emojis' && (
+                  <div className={`py-5 space-y-3 border-b ${isDarkMode ? 'border-[#222]' : 'border-[#EFEFEF]'}`}>
+                    <span className="text-[11px] font-medium uppercase tracking-wider opacity-40">Emojis</span>
+                    <div className="grid grid-cols-3 gap-3">
+                      {(['emojiDark', 'emojiMid', 'emojiLight'] as const).map((key, i) => (
+                        <div key={key}>
+                          <label className={labelCls}>{['Dark', 'Mid', 'Light'][i]}</label>
+                          <input
+                            type="text"
+                            value={config[key]}
+                            onChange={(e) => setConfig(prev => ({ ...prev, [key]: e.target.value }))}
+                            className={`${inputCls(isDarkMode)} text-center text-base`}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {!config.dither && !config.cross && config.charMode === 'charset' && (
+                  <div className={`py-5 space-y-3 border-b ${isDarkMode ? 'border-[#222]' : 'border-[#EFEFEF]'}`}>
+                    <span className="text-[11px] font-medium uppercase tracking-wider opacity-40">Characters</span>
+                    <input
+                      type="text"
+                      value={config.charset}
+                      onChange={(e) => setConfig(prev => ({ ...prev, charset: e.target.value }))}
+                      className={inputCls(isDarkMode)}
+                    />
+                    <p className="text-[10px] opacity-40 leading-relaxed">
+                      Ordered light → dark; darker image areas draw larger glyphs.
+                    </p>
+                  </div>
+                )}
+
                 {/* ADVANCED — everything else, collapsed by default */}
                 <button
                   onClick={() => setShowAdvanced(v => !v)}
