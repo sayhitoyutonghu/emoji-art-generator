@@ -49,8 +49,8 @@ const STYLE_PRESETS: StylePreset[] = [
   {
     id: 'emoji',
     name: 'Emoji Mosaic',
-    swatch: { bg: '#F2F2F2', fg: '#000000', sample: '🧍🪨☁️' },
-    config: { dither: false, cross: false, charMode: 'emojis', colorMode: 'original', density: 48, isAnimated: false },
+    swatch: { bg: '#F2F2F2', fg: '#000000', sample: '🪨☁️' },
+    config: { dither: false, cross: false, charMode: 'emojis', colorMode: 'original', density: 140, emojiDark: '🪨', emojiMid: '', emojiLight: '☁️', contrast: 1.3, isAnimated: false },
   },
   {
     id: 'dither',
@@ -243,7 +243,7 @@ export default function App() {
   // UI Layout State
   const [openSections, setOpenSections] = useState<Set<string>>(new Set(['canvas']));
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [activePreset, setActivePreset] = useState<string | null>(null);
+  const [activePreset, setActivePreset] = useState<string | null>('emoji');
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [canvasDims, setCanvasDims] = useState({ width: 0, height: 0 });
 
@@ -284,27 +284,27 @@ export default function App() {
 
   const [config, setConfig] = useState<Config>({
     charset: DEFAULT_CHARSET,
-    density: 48,
+    density: 140,
     fontSize: 100,
-    canvasWidth: 1200,
+    canvasWidth: 4000,
     aspectRatio: 'source',
     dither: false,
     cross: false,
     showVideo: false,
     videoDim: 0.9,
-    colorMode: 'monochrome',
+    colorMode: 'original',
     monochromeColor: '#000000',
     sweepColor1: '#22C55E',
     sweepColor2: '#EF4444',
     sweepColor3: '#3B82F6',
     sweepProgress: 0,
     autoSweep: true,
-    contrast: 1.2,
+    contrast: 1.3,
     brightness: 1.0,
     customWords: "✅ 🔘 📝 ⏳ TODO DONE TASK",
     charMode: 'emojis',
-    emojiDark: '🧍‍♂️',
-    emojiMid: '🪨',
+    emojiDark: '🪨',
+    emojiMid: '',
     emojiLight: '☁️',
     emojiThreshold1: 85,
     emojiThreshold2: 170,
