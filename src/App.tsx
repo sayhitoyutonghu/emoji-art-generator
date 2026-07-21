@@ -44,7 +44,7 @@ const STYLE_PRESETS: StylePreset[] = [
     id: 'cross',
     name: 'Cross Halftone',
     swatch: { bg: '#F9BB92', fg: '#141414', sample: '+ + +' },
-    config: { dither: false, cross: true, colorMode: 'monochrome', monochromeColor: '#141414', density: 60, contrast: 1.3, isAnimated: false },
+    config: { dither: false, cross: true, colorMode: 'monochrome', monochromeColor: '#141414', density: 60, contrast: 1.3, brightness: 1.6, isAnimated: false },
   },
   {
     id: 'emoji',
