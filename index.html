@@ -4,7 +4,10 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Emoji Art Generator</title>
-    <script src="https://www.webrtc-experiment.com/gif-recorder.js"></script>
+    <!-- Vendored from webrtc-experiment.com (MIT, Muaz Khan). Loading it from that
+         domain put the whole tool at the mercy of a third-party host, and it blocked
+         first paint. Kept local and deferred instead. -->
+    <script src="./gif-recorder.js" defer></script>
   </head>
   <body>
     <div id="root"></div>

@@ -358,7 +358,7 @@ export default function App() {
 
     const sourceWidth = videoElement ? videoElement.videoWidth : image!.naturalWidth;
     const sourceHeight = videoElement ? videoElement.videoHeight : image!.naturalHeight;
-    
+
     if (sourceWidth === 0 || sourceHeight === 0) {
       // Retry after a short delay if video dimensions are not yet available
       if (videoElement) {
@@ -366,6 +366,11 @@ export default function App() {
       }
       return;
     }
+
+    // A frame is about to be drawn, so whatever was decoding has finished. The
+    // status used to stay on "Decoding media…" indefinitely, which made a
+    // perfectly good render look like a stuck upload.
+    setIsMediaLoading(prev => (prev ? false : prev));
 
     // Read one source sample per glyph instead of every pixel in the 4000px
     // output. Full-resolution getImageData on every video/GIF frame can move
