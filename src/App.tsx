@@ -342,6 +342,7 @@ export default function App() {
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const mediaElementHostRef = useRef<HTMLDivElement>(null);
   const animationRef = useRef<number>(0);
   const timeRef = useRef<number>(0);
 
@@ -626,6 +627,25 @@ export default function App() {
       }, 0);
     }
   }, [image, videoElement, isAnimatedImage, config]);
+
+  // Animated images created with `new Image()` can remain frozen on their
+  // first frame when they never enter the DOM. The reported GIF starts with a
+  // blank frame, so canvas sampling stayed blank even while the separate
+  // sidebar preview animated. Mount the exact sampling element in a tiny,
+  // transparent host so the browser advances its animation timeline.
+  useEffect(() => {
+    const mediaSource = videoElement || image;
+    const host = mediaElementHostRef.current;
+    if (!mediaSource || !host) return;
+
+    if (!host.contains(mediaSource)) {
+      host.replaceChildren(mediaSource);
+    }
+
+    if (videoElement) {
+      videoElement.play().catch(() => {});
+    }
+  }, [image, videoElement]);
 
   useEffect(() => {
     const mediaSource = videoElement || image;
@@ -1309,17 +1329,12 @@ export default function App() {
                   ref={canvasRef}
                   className="max-w-[80vw] max-h-[78vh] object-contain block"
                 />
-                {/* Render video invisibly to ensure browser doesn't pause it */}
+                {/* Keep the actual sampling media mounted so video and GIF
+                    timelines continue advancing while canvas reads frames. */}
                 <div
+                  ref={mediaElementHostRef}
                   aria-hidden="true"
-                  style={{ position: 'fixed', width: 1, height: 1, left: -10000, top: -10000, opacity: 0, pointerEvents: 'none', overflow: 'hidden' }}
-                  ref={(el) => {
-                    if (el && videoElement && !el.contains(videoElement)) {
-                      el.innerHTML = '';
-                      el.appendChild(videoElement);
-                      videoElement.play().catch(console.error);
-                    }
-                  }}
+                  style={{ position: 'fixed', width: 1, height: 1, left: 0, top: 0, opacity: 0.001, pointerEvents: 'none', overflow: 'hidden', zIndex: -1 }}
                 />
               </div>
 
