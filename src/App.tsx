@@ -356,8 +356,8 @@ export default function App() {
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
     if (!ctx) return;
 
-    const sourceWidth = videoElement ? videoElement.videoWidth : image!.width;
-    const sourceHeight = videoElement ? videoElement.videoHeight : image!.height;
+    const sourceWidth = videoElement ? videoElement.videoWidth : image!.naturalWidth;
+    const sourceHeight = videoElement ? videoElement.videoHeight : image!.naturalHeight;
     
     if (sourceWidth === 0 || sourceHeight === 0) {
       // Retry after a short delay if video dimensions are not yet available
@@ -652,8 +652,8 @@ export default function App() {
     if (mediaSource) {
       const canvas = canvasRef.current;
       if (canvas) {
-        const sourceWidth = videoElement ? videoElement.videoWidth : image!.width;
-        const sourceHeight = videoElement ? videoElement.videoHeight : image!.height;
+        const sourceWidth = videoElement ? videoElement.videoWidth : image!.naturalWidth;
+        const sourceHeight = videoElement ? videoElement.videoHeight : image!.naturalHeight;
         if (sourceWidth > 0) {
           const dims = computeCanvasDims(config.canvasWidth, config.aspectRatio, sourceWidth, sourceHeight);
           canvas.width = dims.width;
