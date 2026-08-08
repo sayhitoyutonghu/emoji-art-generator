@@ -628,24 +628,17 @@ export default function App() {
     }
   }, [image, videoElement, isAnimatedImage, config]);
 
-  // Animated images created with `new Image()` can remain frozen on their
-  // first frame when they never enter the DOM. The reported GIF starts with a
-  // blank frame, so canvas sampling stayed blank even while the separate
-  // sidebar preview animated. Mount the exact sampling element in a tiny,
-  // transparent host so the browser advances its animation timeline.
+  // Keep the internal video mounted so browsers continue decoding frames even
+  // though the visible preview uses a separate element.
   useEffect(() => {
-    const mediaSource = videoElement || image;
     const host = mediaElementHostRef.current;
-    if (!mediaSource || !host) return;
+    if (!videoElement || !host) return;
 
-    if (!host.contains(mediaSource)) {
-      host.replaceChildren(mediaSource);
+    if (!host.contains(videoElement)) {
+      host.replaceChildren(videoElement);
     }
-
-    if (videoElement) {
-      videoElement.play().catch(() => {});
-    }
-  }, [image, videoElement]);
+    videoElement.play().catch(() => {});
+  }, [videoElement]);
 
   useEffect(() => {
     const mediaSource = videoElement || image;
@@ -673,81 +666,65 @@ export default function App() {
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = '';
-    if (file) {
-      setMediaError(null);
-      setIsMediaLoading(true);
+    if (!file) return;
 
-      if (file.type.startsWith('video/')) {
-        const url = URL.createObjectURL(file);
-        const vid = document.createElement('video');
-        let didSettle = false;
-        const timeout = window.setTimeout(() => {
-          if (didSettle) return;
-          didSettle = true;
-          URL.revokeObjectURL(url);
-          setIsMediaLoading(false);
-          setMediaError('This video did not decode. Try an H.264 MP4 or VP9 WebM file.');
-        }, 15000);
-
-        const failVideo = () => {
-          if (didSettle) return;
-          didSettle = true;
-          window.clearTimeout(timeout);
-          URL.revokeObjectURL(url);
-          setIsMediaLoading(false);
-          setMediaError(`Could not decode “${file.name}”. Try converting it to H.264 MP4.`);
-        };
-
-        vid.src = url;
-        vid.preload = 'auto';
-        vid.autoplay = true;
-        vid.playsInline = true;
-        vid.loop = true;
-        vid.muted = true;
-        vid.setAttribute('autoplay', '');
-        vid.setAttribute('muted', '');
-        vid.setAttribute('playsinline', '');
-        vid.setAttribute('loop', '');
-        vid.onloadeddata = () => {
-          if (didSettle) return;
-          didSettle = true;
-          window.clearTimeout(timeout);
-          videoElement?.pause();
-          if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
-          objectUrlRef.current = url;
-          setVideoElement(vid);
-          setImage(null);
-          setIsAnimatedImage(false);
-          setMediaPreviewUrl(url);
-          setPreviewPlaying(true);
-          setIsMediaLoading(false);
-          vid.play().catch(() => {
-            setMediaError('The video loaded, but autoplay was blocked. Click the preview play button.');
-          });
-        };
-        vid.onerror = failVideo;
-        vid.load();
-      } else {
-        const url = URL.createObjectURL(file);
-        const img = new Image();
-        img.onload = () => {
-          videoElement?.pause();
-          if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
-          objectUrlRef.current = url;
-          setImage(img);
-          setVideoElement(null);
-          setIsAnimatedImage(file.type === 'image/gif' || /\.gif$/i.test(file.name));
-          setMediaPreviewUrl(url);
-          setIsMediaLoading(false);
-        };
-        img.onerror = () => {
-          URL.revokeObjectURL(url);
-          setIsMediaLoading(false);
-          setMediaError(`Could not read “${file.name}”. Try PNG, JPEG, WebP, or GIF.`);
-        };
-        img.src = url;
-      }
+    setMediaError(null);
+    if (!file.type.startsWith('video/')) {
+      setIsMediaLoading(false);
+      setMediaError('Only video files are supported. Convert GIFs to H.264 MP4 or VP9 WebM before uploading.');
+      return;
     }
+
+    setIsMediaLoading(true);
+    const url = URL.createObjectURL(file);
+    const vid = document.createElement('video');
+    let didSettle = false;
+    const timeout = window.setTimeout(() => {
+      if (didSettle) return;
+      didSettle = true;
+      URL.revokeObjectURL(url);
+      setIsMediaLoading(false);
+      setMediaError('This video did not decode. Try an H.264 MP4 or VP9 WebM file.');
+    }, 15000);
+
+    const failVideo = () => {
+      if (didSettle) return;
+      didSettle = true;
+      window.clearTimeout(timeout);
+      URL.revokeObjectURL(url);
+      setIsMediaLoading(false);
+      setMediaError(`Could not decode “${file.name}”. Try converting it to H.264 MP4.`);
+    };
+
+    vid.src = url;
+    vid.preload = 'auto';
+    vid.autoplay = true;
+    vid.playsInline = true;
+    vid.loop = true;
+    vid.muted = true;
+    vid.setAttribute('autoplay', '');
+    vid.setAttribute('muted', '');
+    vid.setAttribute('playsinline', '');
+    vid.setAttribute('loop', '');
+    vid.onloadeddata = () => {
+      if (didSettle) return;
+      didSettle = true;
+      window.clearTimeout(timeout);
+      videoElement?.pause();
+      if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
+      objectUrlRef.current = url;
+      setVideoElement(vid);
+      setImage(null);
+      setIsAnimatedImage(false);
+      setMediaPreviewUrl(url);
+      setPreviewPlaying(true);
+      setIsMediaLoading(false);
+      vid.play().catch(() => {
+        setMediaError('The video loaded, but autoplay was blocked. Click the preview play button.');
+      });
+    };
+    vid.onerror = failVideo;
+    vid.load();
   };
 
   const downloadResult = () => {
@@ -839,7 +816,7 @@ export default function App() {
         type="file"
         ref={fileInputRef}
         onChange={handleFileUpload}
-        accept="image/*,video/*"
+        accept="video/*"
         className="hidden"
       />
 
@@ -890,7 +867,7 @@ export default function App() {
                   )}
                   {mediaPreviewUrl ? (
                     <div>
-                      <span className="text-[11px] opacity-40 block mb-2">{mediaType === 'video' ? 'Video' : (isAnimatedImage ? 'Animated GIF' : 'Image')}</span>
+                      <span className="text-[11px] opacity-40 block mb-2">Video</span>
                       <div className={`relative rounded-xl overflow-hidden aspect-video ${isDarkMode ? 'bg-[#141414]' : 'bg-[#F5F5F5]'}`}>
                         {mediaType === 'video' ? (
                           <video
@@ -938,7 +915,8 @@ export default function App() {
                       className={`w-full py-8 rounded-xl border border-dashed flex flex-col items-center gap-2 transition-colors ${isDarkMode ? 'border-[#333] hover:border-[#666]' : 'border-[#DDD] hover:border-[#999]'}`}
                     >
                       <Upload size={18} className="opacity-50" />
-                      <span className="text-xs opacity-50">Upload photo or video</span>
+                      <span className="text-xs opacity-50">Upload video</span>
+                      <span className="text-[10px] opacity-30">MP4 or WebM recommended</span>
                     </button>
                   )}
                 </div>
@@ -1310,12 +1288,12 @@ export default function App() {
                 <ImageIcon size={20} className="opacity-60" />
               </div>
               <h3 className="text-base font-medium mb-1.5">No media loaded</h3>
-              <p className="text-xs opacity-50 mb-6 leading-relaxed">Upload a photo or video to start generating typographic art. High contrast works best.</p>
+              <p className="text-xs opacity-50 mb-6 leading-relaxed">Upload an H.264 MP4 or VP9 WebM video to start generating typographic art. GIF and image uploads are not supported.</p>
               <button
                 onClick={() => fileInputRef.current?.click()}
                 className={`px-6 py-2.5 rounded-full text-xs font-medium transition-colors ${isDarkMode ? 'bg-white text-black hover:opacity-80' : 'bg-[#141414] text-white hover:opacity-80'}`}
               >
-                Select File
+                Select Video
               </button>
             </motion.div>
           ) : (
@@ -1329,8 +1307,8 @@ export default function App() {
                   ref={canvasRef}
                   className="max-w-[80vw] max-h-[78vh] object-contain block"
                 />
-                {/* Keep the actual sampling media mounted so video and GIF
-                    timelines continue advancing while canvas reads frames. */}
+                {/* Keep the actual sampling video mounted so its decode
+                    timeline continues advancing while canvas reads frames. */}
                 <div
                   ref={mediaElementHostRef}
                   aria-hidden="true"
