@@ -232,6 +232,9 @@ function inputCls(isDarkMode: boolean) {
 export default function App() {
   const [image, setImage] = useState<HTMLImageElement | null>(null);
   const [videoElement, setVideoElement] = useState<HTMLVideoElement | null>(null);
+  const [isAnimatedImage, setIsAnimatedImage] = useState(false);
+  const [isMediaLoading, setIsMediaLoading] = useState(false);
+  const [mediaError, setMediaError] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(true);
   
@@ -258,6 +261,7 @@ export default function App() {
   const [previewPlaying, setPreviewPlaying] = useState(true);
   const [previewMuted, setPreviewMuted] = useState(true);
   const previewVideoRef = useRef<HTMLVideoElement>(null);
+  const objectUrlRef = useRef<string | null>(null);
   const mediaType: 'video' | 'image' | null = videoElement ? 'video' : (image ? 'image' : null);
 
   const togglePreviewPlayback = () => {
@@ -362,14 +366,18 @@ export default function App() {
       return;
     }
 
-    // Use a temporary canvas to store pixel data once
+    // Read one source sample per glyph instead of every pixel in the 4000px
+    // output. Full-resolution getImageData on every video/GIF frame can move
+    // hundreds of megabytes per second and makes the canvas appear blank.
     const tempCanvas = document.createElement('canvas');
     const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true });
     if (!tempCtx) return;
-    
-    const dims = computeCanvasDims(config.canvasWidth, config.aspectRatio, sourceWidth, sourceHeight);
-    tempCanvas.width = dims.width;
-    tempCanvas.height = dims.height;
+
+    const cellSize = Math.max(2, canvas.width / config.density);
+    const sampleColumns = Math.max(1, Math.ceil(canvas.width / cellSize));
+    const sampleRows = Math.max(1, Math.ceil(canvas.height / cellSize));
+    tempCanvas.width = sampleColumns;
+    tempCanvas.height = sampleRows;
 
     const draw = (t: number) => {
       // For video, we must re-sample the pixels every frame
@@ -422,11 +430,11 @@ export default function App() {
       // Grid is defined by column count (config.density), independent of the
       // export resolution — so a higher canvas width yields a sharper render of
       // the SAME mosaic rather than more, smaller glyphs.
-      const cellSize = Math.max(2, canvas.width / config.density);
-
-      for (let y = 0; y < canvas.height; y += cellSize) {
-        for (let x = 0; x < canvas.width; x += cellSize) {
-          const i = (Math.floor(y) * canvas.width + Math.floor(x)) * 4;
+      for (let row = 0; row < sampleRows; row++) {
+        const y = row * cellSize;
+        for (let col = 0; col < sampleColumns; col++) {
+          const x = col * cellSize;
+          const i = (row * sampleColumns + col) * 4;
           if (i >= pixels.length) continue;
 
           let r = pixels[i];
@@ -450,8 +458,6 @@ export default function App() {
 
           // Dither path: ordered 1-bit dithering into a solid ink block.
           if (config.dither) {
-            const col = Math.round(x / cellSize);
-            const row = Math.round(y / cellSize);
             const threshold = (BAYER4[(row & 3) * 4 + (col & 3)] + 0.5) / 16;
             const inverted = config.colorMode === 'invert';
             const lum = inverted ? 1 - brightness / 255 : brightness / 255;
@@ -605,7 +611,7 @@ export default function App() {
       }
     };
 
-    const needsAnimationLoop = config.isAnimated || !!videoElement || ((config.colorMode === 'sweep' || config.charMode === 'sweep') && config.autoSweep);
+    const needsAnimationLoop = config.isAnimated || !!videoElement || isAnimatedImage || ((config.colorMode === 'sweep' || config.charMode === 'sweep') && config.autoSweep);
     if (needsAnimationLoop) {
       const animate = (t: number) => {
         draw(t);
@@ -619,7 +625,7 @@ export default function App() {
         setIsProcessing(false);
       }, 0);
     }
-  }, [image, videoElement, config]);
+  }, [image, videoElement, isAnimatedImage, config]);
 
   useEffect(() => {
     const mediaSource = videoElement || image;
@@ -646,40 +652,80 @@ export default function App() {
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    e.target.value = '';
     if (file) {
+      setMediaError(null);
+      setIsMediaLoading(true);
+
       if (file.type.startsWith('video/')) {
         const url = URL.createObjectURL(file);
         const vid = document.createElement('video');
+        let didSettle = false;
+        const timeout = window.setTimeout(() => {
+          if (didSettle) return;
+          didSettle = true;
+          URL.revokeObjectURL(url);
+          setIsMediaLoading(false);
+          setMediaError('This video did not decode. Try an H.264 MP4 or VP9 WebM file.');
+        }, 15000);
+
+        const failVideo = () => {
+          if (didSettle) return;
+          didSettle = true;
+          window.clearTimeout(timeout);
+          URL.revokeObjectURL(url);
+          setIsMediaLoading(false);
+          setMediaError(`Could not decode “${file.name}”. Try converting it to H.264 MP4.`);
+        };
+
         vid.src = url;
+        vid.preload = 'auto';
         vid.autoplay = true;
         vid.playsInline = true;
         vid.loop = true;
         vid.muted = true;
-        vid.crossOrigin = "anonymous";
         vid.setAttribute('autoplay', '');
         vid.setAttribute('muted', '');
         vid.setAttribute('playsinline', '');
         vid.setAttribute('loop', '');
         vid.onloadeddata = () => {
+          if (didSettle) return;
+          didSettle = true;
+          window.clearTimeout(timeout);
+          videoElement?.pause();
+          if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
+          objectUrlRef.current = url;
           setVideoElement(vid);
           setImage(null);
+          setIsAnimatedImage(false);
           setMediaPreviewUrl(url);
           setPreviewPlaying(true);
-          vid.play().catch(console.error);
+          setIsMediaLoading(false);
+          vid.play().catch(() => {
+            setMediaError('The video loaded, but autoplay was blocked. Click the preview play button.');
+          });
         };
+        vid.onerror = failVideo;
+        vid.load();
       } else {
-        const reader = new FileReader();
-        reader.onload = (event) => {
-          const dataUrl = event.target?.result as string;
-          const img = new Image();
-          img.onload = () => {
-            setImage(img);
-            setVideoElement(null);
-            setMediaPreviewUrl(dataUrl);
-          };
-          img.src = dataUrl;
+        const url = URL.createObjectURL(file);
+        const img = new Image();
+        img.onload = () => {
+          videoElement?.pause();
+          if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
+          objectUrlRef.current = url;
+          setImage(img);
+          setVideoElement(null);
+          setIsAnimatedImage(file.type === 'image/gif' || /\.gif$/i.test(file.name));
+          setMediaPreviewUrl(url);
+          setIsMediaLoading(false);
         };
-        reader.readAsDataURL(file);
+        img.onerror = () => {
+          URL.revokeObjectURL(url);
+          setIsMediaLoading(false);
+          setMediaError(`Could not read “${file.name}”. Try PNG, JPEG, WebP, or GIF.`);
+        };
+        img.src = url;
       }
     }
   };
@@ -750,9 +796,19 @@ export default function App() {
     vid.onloadeddata = () => {
       setVideoElement(vid);
       setImage(null);
+      setIsAnimatedImage(false);
       setMediaPreviewUrl(url);
       setPreviewPlaying(true);
       vid.play().catch(() => {});
+    };
+    vid.onerror = () => setMediaError('The bundled demo could not be loaded.');
+
+    return () => {
+      vid.pause();
+      if (objectUrlRef.current) {
+        URL.revokeObjectURL(objectUrlRef.current);
+        objectUrlRef.current = null;
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -801,9 +857,20 @@ export default function App() {
                 {/* SOURCE — always visible */}
                 <div className={`py-5 space-y-4 border-b ${isDarkMode ? 'border-[#222]' : 'border-[#EFEFEF]'}`}>
                   <span className="text-[11px] font-medium uppercase tracking-wider opacity-40">Source</span>
+                  {isMediaLoading && (
+                    <div className={`rounded-lg px-3 py-2 text-[11px] flex items-center gap-2 ${isDarkMode ? 'bg-[#171717] text-[#BBB]' : 'bg-[#F5F5F5] text-[#666]'}`}>
+                      <RefreshCw size={12} className="animate-spin" />
+                      Decoding media…
+                    </div>
+                  )}
+                  {mediaError && (
+                    <div className={`rounded-lg px-3 py-2 text-[11px] leading-relaxed ${isDarkMode ? 'bg-[#2A1717] text-[#FFAAAA]' : 'bg-[#FFF0F0] text-[#A32222]'}`}>
+                      {mediaError}
+                    </div>
+                  )}
                   {mediaPreviewUrl ? (
                     <div>
-                      <span className="text-[11px] opacity-40 block mb-2">{mediaType === 'video' ? 'Video' : 'Image'}</span>
+                      <span className="text-[11px] opacity-40 block mb-2">{mediaType === 'video' ? 'Video' : (isAnimatedImage ? 'Animated GIF' : 'Image')}</span>
                       <div className={`relative rounded-xl overflow-hidden aspect-video ${isDarkMode ? 'bg-[#141414]' : 'bg-[#F5F5F5]'}`}>
                         {mediaType === 'video' ? (
                           <video
@@ -1244,7 +1311,8 @@ export default function App() {
                 />
                 {/* Render video invisibly to ensure browser doesn't pause it */}
                 <div
-                  style={{ display: 'none' }}
+                  aria-hidden="true"
+                  style={{ position: 'fixed', width: 1, height: 1, left: -10000, top: -10000, opacity: 0, pointerEvents: 'none', overflow: 'hidden' }}
                   ref={(el) => {
                     if (el && videoElement && !el.contains(videoElement)) {
                       el.innerHTML = '';
